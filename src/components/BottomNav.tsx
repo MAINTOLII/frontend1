@@ -87,8 +87,8 @@ export default function BottomNav() {
       activePrefixes: ["/"] ,
     },
     {
-      href: "/categories",
-      label: "List",
+      href: "/degdeg",
+      label: "Dedeg",
       icon: <IconList active={pathname.startsWith("/categories")} />,
       activePrefixes: ["/categories", "/category", "/subcategory"],
     },

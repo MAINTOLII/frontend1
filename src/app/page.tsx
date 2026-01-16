@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import Image from "next/image";
@@ -188,6 +189,8 @@ export default function HomePage() {
   const [categoryMap, setCategoryMap] = useState<CategoryWithSubcats[]>([]);
   const [loadingCats, setLoadingCats] = useState(true);
   const [activeCatSlug, setActiveCatSlug] = useState<string | null>(null);
+
+  // Compact top categories when user scrolls down (hides images)
   const [compactTopCats, setCompactTopCats] = useState(false);
 
   useEffect(() => {
@@ -215,16 +218,22 @@ export default function HomePage() {
     };
   }, []);
 
-  // Compact top categories (hide images) when scrolling down
   useEffect(() => {
-    const handleScroll = () => {
-      if (typeof window === "undefined") return;
-      setCompactTopCats(window.scrollY > 140);
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const y = window.scrollY || 0;
+        setCompactTopCats(y > 120);
+      });
     };
 
-    handleScroll();
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScroll);
+    };
   }, []);
 
   // Observe category sections and update active slug when scrolling
@@ -232,19 +241,30 @@ export default function HomePage() {
     if (!categoryMap.length) return;
 
     const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          const slug = entry.target.getAttribute("data-cat-slug");
-          if (!slug) return;
-          if (entry.isIntersecting) {
-            setActiveCatSlug(slug);
-          }
-        });
-      },
+(entries) => {
+  // Pick the section whose top is closest to the sticky header (but not far above it)
+  const visible = entries
+    .filter((e) => e.isIntersecting)
+    .map((e) => ({
+      slug: e.target.getAttribute("data-cat-slug") || "",
+      top: e.boundingClientRect.top,
+    }))
+    .filter((x) => !!x.slug);
+
+  if (visible.length === 0) return;
+
+  // Where content begins under sticky header
+  const targetTop = compactTopCats ? 170 : 210;
+
+  visible.sort((a, b) => Math.abs(a.top - targetTop) - Math.abs(b.top - targetTop));
+  setActiveCatSlug(visible[0].slug);
+},
       {
         root: null,
-        rootMargin: "-80px 0px -60% 0px",
-        threshold: 0.2,
+        // a bit more forgiving because the header is sticky
+// Give more bottom room so the last section can become active near page end
+rootMargin: compactTopCats ? "-140px 0px -45% 0px" : "-180px 0px -45% 0px",
+threshold: 0.12,
       }
     );
 
@@ -257,8 +277,37 @@ export default function HomePage() {
     return () => {
       observer.disconnect();
     };
-  }, [categoryMap]);
+  }, [categoryMap, compactTopCats]);
+// Fallback: when user reaches the bottom, ensure the last category becomes active
+useEffect(() => {
+  if (!categoryMap.length) return;
 
+  const last = [...categoryMap].reverse().find((c) => !!c.slug);
+  if (!last?.slug) return;
+
+  let raf = 0;
+  const onScroll = () => {
+    if (raf) cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => {
+      const scrollY = window.scrollY || 0;
+      const winH = window.innerHeight || 0;
+      const docH = document.documentElement.scrollHeight || 0;
+
+      // within 120px of bottom
+      if (scrollY + winH >= docH - 120) {
+        setActiveCatSlug(last.slug as string);
+      }
+    });
+  };
+
+  window.addEventListener("scroll", onScroll, { passive: true });
+  onScroll();
+
+  return () => {
+    if (raf) cancelAnimationFrame(raf);
+    window.removeEventListener("scroll", onScroll);
+  };
+}, [categoryMap]);
   // Lookup map for cart totals
   const [variantMap, setVariantMap] = useState<Record<string, VariantRow>>({});
 
@@ -287,11 +336,12 @@ export default function HomePage() {
     };
   }, [items]);
 
+  const headerOffset = compactTopCats ? 210 : 230;
+
   const scrollToCategory = (slug: string) => {
     const el = sectionRefs.current[slug];
     if (!el) return;
 
-    const headerOffset = 170;
     const rect = el.getBoundingClientRect();
     const scrollTop = window.scrollY + rect.top - headerOffset;
 
@@ -324,50 +374,55 @@ export default function HomePage() {
     <main className="min-h-screen bg-white text-black">
       <TopNavbar />
 
-      {/* TOP CATEGORIES STRIP (just under search bar) */}
+      {/* TOP CATEGORIES STRIP (separate and compactable) */}
       {categoryMap.length > 0 && (
-        <section className="sticky top-[110px] z-40 border-b bg-white shadow-sm">
-          <div className="mx-auto max-w-md px-2 py-2 flex gap-4 overflow-x-auto">
-            {categoryMap.map((cat) => {
-              const label = ((lang === "en" ? cat.name_en : cat.name_so) ?? "").trim();
-              const imgSrc =
-                typeof cat.img === "string" && cat.img.trim().length > 0
-                  ? cat.img.trimEnd()
-                  : "https://ecfxrmhrfjqdmqewzrfz.supabase.co/storage/v1/object/public/product-images/subcategories/baleware.webp";
+        <section className="sticky top-[120px] z-40 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/75">
+          <div className={`${compactTopCats ? "py-2" : "py-2"}`}>
+<div className="mx-auto max-w-md px-2 flex flex-wrap justify-between gap-2 overflow-x-hidden">              {categoryMap.map((cat) => {
+                const label = ((lang === "en" ? cat.name_en : cat.name_so) ?? "").trim();
+                const imgSrc =
+                  typeof cat.img === "string" && cat.img.trim().length > 0
+                    ? cat.img.trimEnd()
+                    : "https://ecfxrmhrfjqdmqewzrfz.supabase.co/storage/v1/object/public/product-images/subcategories/baleware.webp";
 
-              const isActive = !!cat.slug && activeCatSlug === cat.slug;
+                const isActive = !!cat.slug && activeCatSlug === cat.slug;
 
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => cat.slug && scrollToCategory(cat.slug)}
-                  className={`min-w-[78px] px-1 py-0.5 rounded-xl transition-all duration-200 ${
-                    isActive ? "bg-[#E3F2FF] shadow-md scale-[1.02]" : "bg-transparent"
-                  }`}
-                  type="button"
-                  disabled={!cat.slug}
-                  title={!cat.slug ? "Category slug missing" : ""}
-                >
-                  {!compactTopCats && (
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => cat.slug && scrollToCategory(cat.slug)}
+className={`w-[72px] px-1 rounded-xl transition-colors duration-200 ${
+  isActive ? "bg-[#E3F2FF] shadow-sm" : "bg-transparent"
+}`}
+                    type="button"
+                    disabled={!cat.slug}
+                    title={!cat.slug ? "Category slug missing" : ""}
+                  >
                     <div
-                      className={`mx-auto h-14 w-14 rounded-full overflow-hidden flex items-center justify-center transition-shadow ${
-                        isActive ? "bg-[#DBEAFE] ring-2 ring-[#0B6EA9] shadow-lg" : "bg-blue-50"
+                      className={`mx-auto overflow-hidden flex items-center justify-center transition-all duration-200 rounded-full ${
+                        compactTopCats ? "h-0 w-0 opacity-0" : "h-12 w-12 opacity-100"
+                      } ${isActive ? "bg-[#DBEAFE] ring-2 ring-[#0B6EA9] shadow-md" : "bg-blue-50"}`}
+                    >
+                      <Image
+                        src={imgSrc}
+                        alt={label || "Category"}
+                        width={48}
+                        height={48}
+                        className="w-full h-full object-contain p-1"
+                      />
+                    </div>
+
+                    <div
+                      className={`${compactTopCats ? "mt-0" : "mt-1"} text-[11px] text-center leading-tight font-semibold transition-colors ${
+                        isActive ? "text-[#0B6EA9]" : "text-[#0B3C6E]"
                       }`}
                     >
-                      <Image src={imgSrc} alt={label || "Category"} width={56} height={56} className="w-full h-full object-contain p-1" />
+                      {label || "—"}
                     </div>
-                  )}
-
-                  <div
-                    className={`mt-1 text-[11px] text-center leading-tight font-semibold transition-colors ${
-                      isActive ? "text-[#0B6EA9]" : "text-[#0B3C6E]"
-                    }`}
-                  >
-                    {label || "—"}
-                  </div>
-                </button>
-              );
-            })}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </section>
       )}
@@ -421,14 +476,14 @@ export default function HomePage() {
                   if (cat.slug) sectionRefs.current[cat.slug] = el;
                 }}
                 data-cat-slug={cat.slug ?? ""}
-                className="scroll-mt-[140px] pb-3"
+                className="scroll-mt-[190px] pb-3"
               >
                 <div className="mb-1">
                   <PrimarySecondary primary={catPrimary || "—"} center={false} primaryClass="text-lg font-bold text-gray-900" />
                 </div>
 
                 <div className="grid grid-cols-3 gap-x-3 gap-y-2.5">
-                  {(cat.subcats || []).slice(0, 8).map((sub) => {
+                  {(cat.subcats || []).slice(0, 12).map((sub) => {
                     const subPrimary = ((lang === "en" ? sub.name_en : sub.name_so) ?? "").trim();
 
                     return (
