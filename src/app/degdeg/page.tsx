@@ -14,24 +14,15 @@ export default function DegdegPage() {
     <main className="min-h-screen bg-white text-black">
       <div className="mx-auto max-w-md px-4 py-6">
         <div className="mb-6">
-          <h1 className="text-xl font-extrabold">Degdeg (Dalab Degdeg)</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Ku qor waxa aad rabto hoos, ama si toos ah noogu wac/WhatsApp.
+          <h1 className="text-2xl font-extrabold text-center">Dalab Degdeg</h1>
+          <p className="mt-1 text-sm text-gray-600 text-center">
+            Ku qor dalabkaaga, kadibna ku dir WhatsApp.
           </p>
         </div>
 
-        {/* PRIMARY CTA: WhatsApp (Somalis prefer WhatsApp) */}
-        <a
-          href="https://wa.me/252612073874?text=Asc%2C%20waxaan%20rabaa%3A%20"
-          className="block w-full rounded-2xl bg-[#0B6EA9] px-4 py-4 text-center text-base font-extrabold text-white shadow-sm active:scale-[0.99]"
-        >
-          💬 WhatsApp Hadda
-          <div className="mt-1 text-xs font-semibold text-white/90">+252 61 207 3874</div>
-        </a>
-
         {/* FORM */}
         <div className="mt-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-          <div className="text-sm font-extrabold">Qor alaabta aad rabto</div>
+          <div className="text-sm font-extrabold">Dalabkaaga</div>
           <div className="mt-1 text-xs text-gray-600">
             Tusaale: 2 bariis, 1 saliid, 3 caano, 1 tissue...
           </div>
@@ -43,32 +34,25 @@ export default function DegdegPage() {
             onChange={(e) => setItems(e.target.value)}
             placeholder="Ku qor halkan…"
           />
-
-          <div className="mt-3 rounded-xl bg-gray-50 p-3 text-xs text-gray-600">
-            💡 Haddii aad degdeg u rabto, ku dir WhatsApp — waxaan kuu jawaabaynaa sida ugu dhaqsaha badan.
-          </div>
         </div>
 
         {/* BOTTOM CTA (after user types) */}
         <div className="mt-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-          <div className="text-sm font-extrabold">Diyaar ma tahay?</div>
-          <div className="mt-1 text-xs text-gray-600">
-            Riix badhanka hoose si aad WhatsApp noogu soo dirto dalabkaaga.
-          </div>
+          <div className="text-sm font-extrabold text-center">Dalbo hadda</div>
 
           <a
             href={waHref}
-            className="mt-3 block w-full rounded-2xl bg-[#16A34A] px-4 py-4 text-center text-base font-extrabold text-white shadow-sm active:scale-[0.99]"
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#16A34A] px-4 py-4 text-center text-base font-extrabold text-white shadow-sm active:scale-[0.99]"
           >
-            ✅ Ku dir Dalabka (WhatsApp)
-            <div className="mt-1 text-xs font-semibold text-white/90">+252 61 207 3874</div>
+            <span>📲</span>
+            <span>Ku dir WhatsApp</span>
           </a>
 
           <a
             href="tel:+252612073874"
             className="mt-3 block w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-center text-sm font-extrabold text-gray-900 shadow-sm active:scale-[0.99]"
           >
-            📞 Ama Wac (Call)
+            📞 Wac +252 61 207 3874
           </a>
         </div>
 

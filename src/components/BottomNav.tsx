@@ -1,12 +1,14 @@
 "use client";
 
+import React from "react";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 type NavItem = {
   href: string;
   label: string;
-  icon: React.ReactNode;
+  icon: (active: boolean) => React.ReactNode;
   /** treat these path prefixes as active (eg /cart/checkout) */
   activePrefixes?: string[];
 };
@@ -83,19 +85,19 @@ export default function BottomNav() {
     {
       href: "/",
       label: "Home",
-      icon: <IconHome active={pathname === "/"} />,
-      activePrefixes: ["/"] ,
+      icon: (active) => <IconHome active={active} />,
+      activePrefixes: ["/"],
     },
     {
       href: "/degdeg",
-      label: "Dedeg",
-      icon: <IconList active={pathname.startsWith("/categories")} />,
-      activePrefixes: ["/categories", "/category", "/subcategory"],
+      label: "Degdeg",
+      icon: (active) => <IconList active={active} />,
+      activePrefixes: ["/degdeg"],
     },
     {
       href: "/cart",
       label: "Cart",
-      icon: <IconCart active={pathname.startsWith("/cart")} />,
+      icon: (active) => <IconCart active={active} />,
       activePrefixes: ["/cart", "/checkout"],
     },
   ];
@@ -107,10 +109,7 @@ export default function BottomNav() {
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50">
-      {/* subtle fade so content doesn't feel cut off */}
-      <div className="pointer-events-none h-6 bg-gradient-to-t from-white to-transparent" />
-
-      <div className="border-t bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/70">
+      <div className="border-t bg-white">
         <div className="mx-auto max-w-md px-3">
           <div className="mb-[env(safe-area-inset-bottom)] flex items-center justify-between gap-2 py-2">
             {items.map((item) => {
@@ -122,13 +121,11 @@ export default function BottomNav() {
                   aria-label={item.label}
                   className={
                     "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-2xl px-2 py-2 transition " +
-                    (active
-                      ? "bg-[#E8F4FB] text-[#0B6EA9]"
-                      : "hover:bg-gray-50 text-gray-600")
+                    (active ? "text-[#0B6EA9]" : "text-gray-600")
                   }
                 >
                   {/** icon */}
-                  <span className={active ? "scale-105" : ""}>{item.icon}</span>
+                  <span className={active ? "scale-105" : ""}>{item.icon(active)}</span>
                   <span
                     className={
                       "text-[11px] font-semibold tracking-tight " +

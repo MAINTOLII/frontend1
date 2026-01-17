@@ -55,6 +55,8 @@ export default function TopNavbar() {
               onClick={() => {
                 setLang("so");
                 setCookie("lang", "so");
+                try { localStorage.setItem("matomart_lang", "so"); } catch {}
+window.dispatchEvent(new Event("matomart_lang_change"));
               }}
               className={`h-8 w-10 rounded-full text-sm font-extrabold transition active:scale-[0.98] ${
                 lang === "so" ? "bg-white text-[#0B6EA9] shadow" : "text-white/90 hover:bg-white/10"
@@ -68,6 +70,8 @@ export default function TopNavbar() {
               onClick={() => {
                 setLang("en");
                 setCookie("lang", "en");
+                try { localStorage.setItem("matomart_lang", "en"); } catch {}
+window.dispatchEvent(new Event("matomart_lang_change"));
               }}
               className={`h-8 w-10 rounded-full text-sm font-extrabold transition active:scale-[0.98] ${
                 lang === "en" ? "bg-white text-[#0B6EA9] shadow" : "text-white/90 hover:bg-white/10"

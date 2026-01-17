@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import SearchBar from "@/components/SearchBar";
 
@@ -118,7 +118,6 @@ function normalizeConfigLite(raw: any, p: any): OnlineConfigLite {
     })
     .filter(Boolean) as OnlineOptionLite[];
 
-  // exact first by qty, then bulk by min_qty
   const exact = options.filter((o) => o.type === "exact").sort((a, b) => Number(a.qty ?? 0) - Number(b.qty ?? 0));
   const bulk = options.filter((o) => o.type === "bulk").sort((a, b) => Number(a.min_qty ?? 0) - Number(b.min_qty ?? 0));
 
@@ -128,7 +127,9 @@ function normalizeConfigLite(raw: any, p: any): OnlineConfigLite {
 function pickUnitPriceLite(cfg: OnlineConfigLite, basePrice: number, qty: number): number {
   const q2 = Number(qty.toFixed(3));
 
-  const exact = cfg.options.find((o: any) => o.type === "exact" && Number(((o as any).qty ?? 0).toFixed(3)) === q2) as any;
+  const exact = cfg.options.find(
+    (o: any) => o.type === "exact" && Number(((o as any).qty ?? 0).toFixed(3)) === q2
+  ) as any;
   if (exact) return Number(exact.unit_price) || 0;
 
   const bulk = (cfg.options as any[])
@@ -159,39 +160,66 @@ function getSecondary(obj: any, lang: "so" | "en") {
 }
 
 function prettyTitleFromSlug(input: any) {
-  // turns `qamar-milk-powder-2.5kg` into `Qamar Milk Powder 2.5kg`
   let s = String(input ?? "").trim();
   if (!s) return "";
 
-  // if it's URL-encoded, decode it safely
   try {
     s = decodeURIComponent(s);
-  } catch {
-    // ignore
-  }
+  } catch {}
 
-  // if you ever store file paths or full URLs by mistake, just return the last segment
   if (s.includes("/")) {
     const last = s.split("/").filter(Boolean).pop();
     if (last) s = last;
   }
 
-  // normalize separators to spaces
   s = s.replace(/[_+]/g, " ").replace(/-+/g, " ");
   s = s.replace(/\s+/g, " ").trim();
 
-  // Title Case each word (keep numbers as-is)
   s = s
     .split(" ")
     .map((w) => {
       if (!w) return "";
-      // keep words that start with a digit as-is (e.g. 2.5kg)
       if (/^\d/.test(w)) return w;
       return w.charAt(0).toUpperCase() + w.slice(1);
     })
     .join(" ");
 
   return s;
+}
+
+function pctOff(oldTotal: number, newTotal: number) {
+  if (!(oldTotal > 0) || !(newTotal >= 0)) return 0;
+  const p = Math.round(((oldTotal - newTotal) / oldTotal) * 100);
+  return Number.isFinite(p) ? Math.max(0, p) : 0;
+}
+
+function BulkHint({ cfg }: { cfg: OnlineConfigLite }) {
+  const bulk = cfg.options.filter((o) => o.type === "bulk") as OnlineOptionLite[];
+  if (!bulk.length) return null;
+  const best = bulk.sort((a, b) => Number(a.min_qty ?? 0) - Number(b.min_qty ?? 0))[0];
+  const minq = Number(best.min_qty ?? 0);
+  if (!Number.isFinite(minq) || minq <= 0) return null;
+  return (
+    <div className="mt-1 text-[10px] text-gray-600 font-semibold">
+      Bulk: {money(best.unit_price)} / {cfg.unit} from {minq}+ {cfg.unit}
+    </div>
+  );
+}
+
+function AllIcon({ active }: { active: boolean }) {
+  return (
+    <div
+      className={`relative h-12 w-12 rounded-full grid place-items-center border transition-all ${
+        active ? "bg-[#0E5C1C] border-[#0E5C1C]" : "bg-white border-gray-200"
+      }`}
+    >
+      <div className="grid grid-cols-2 gap-1">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className={`h-2.5 w-2.5 rounded-full ${active ? "bg-white" : "bg-[#0E5C1C]"}`} />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /** ===== page ===== */
@@ -207,6 +235,8 @@ export default function SubcategoryPage() {
   const [activeSS, setActiveSS] = useState<string | null>(null);
   const [justAddedId, setJustAddedId] = useState<string | null>(null);
   const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
+
+  const paneRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -238,14 +268,7 @@ export default function SubcategoryPage() {
           sss = (res?.[0] ?? []) as any[];
           prods = (res?.[1] ?? []) as any[];
         } catch (inner: any) {
-          // If one of the parallel fetches fails (RLS, missing table, etc.),
-          // still show the subcategory shell instead of crashing.
-          console.error(
-            "SUBCATEGORY DATA LOAD ERROR",
-            inner?.message ?? inner,
-            inner?.details ?? "",
-            inner
-          );
+          console.error("SUBCATEGORY DATA LOAD ERROR", inner?.message ?? inner, inner?.details ?? "", inner);
           if (!alive) return;
           sss = [];
           prods = [];
@@ -268,15 +291,15 @@ export default function SubcategoryPage() {
           }
           return next;
         });
+
+        requestAnimationFrame(() => {
+          try {
+            paneRef.current?.scrollTo({ top: 0 });
+          } catch {}
+        });
       } catch (e: any) {
-        console.error(
-          "SUBCATEGORY LOAD ERROR",
-          e?.message ?? e,
-          e?.details ?? "",
-          e
-        );
+        console.error("SUBCATEGORY LOAD ERROR", e?.message ?? e, e?.details ?? "", e);
         if (!alive) return;
-        // keep UI usable and avoid stale state
         setCurrentSub(null);
         setSsList([]);
         setProducts([]);
@@ -296,44 +319,37 @@ export default function SubcategoryPage() {
     return () => clearTimeout(t);
   }, [justAddedId]);
 
-  /** ===== Product image (FIXED) + base price ===== */
   /** ===== Product image (products.img) ===== */
-const getProductImageUrl = (p: any) => {
-  const raw = String(p?.img ?? "").trim();
-  if (!raw) return "";
+  const getProductImageUrl = (p: any) => {
+    const raw = String(p?.img ?? "").trim();
+    if (!raw) return "";
 
-  // already a full URL or local path
-  const direct = safeImg(raw);
-  if (direct) return direct;
+    const direct = safeImg(raw);
+    if (direct) return direct;
 
-  const base = String(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
-  if (!base) return "";
+    const base = String(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
+    if (!base) return "";
 
-  // 1) "product-images/products/qamar.webp"
-  if (raw.startsWith("product-images/")) {
+    if (raw.startsWith("product-images/")) {
+      return encodeURI(`${base}/storage/v1/object/public/${raw}`);
+    }
+
+    if (raw.startsWith("products/") || raw.startsWith("subcategories/") || raw.startsWith("categories/")) {
+      return encodeURI(`${base}/storage/v1/object/public/product-images/${raw}`);
+    }
+
+    if (
+      !raw.includes("/") &&
+      (raw.endsWith(".png") || raw.endsWith(".jpg") || raw.endsWith(".jpeg") || raw.endsWith(".webp") || raw.endsWith(".gif"))
+    ) {
+      return encodeURI(`${base}/storage/v1/object/public/product-images/products/${raw}`);
+    }
+
     return encodeURI(`${base}/storage/v1/object/public/${raw}`);
-  }
-
-  // 2) "products/qamar.webp" (assume bucket is product-images)
-  if (raw.startsWith("products/") || raw.startsWith("subcategories/") || raw.startsWith("categories/")) {
-    return encodeURI(`${base}/storage/v1/object/public/product-images/${raw}`);
-  }
-
-  // 3) "qamar.webp" (bare filename)
-  if (
-    !raw.includes("/") &&
-    (raw.endsWith(".png") || raw.endsWith(".jpg") || raw.endsWith(".jpeg") || raw.endsWith(".webp") || raw.endsWith(".gif"))
-  ) {
-    return encodeURI(`${base}/storage/v1/object/public/product-images/products/${raw}`);
-  }
-
-  // fallback
-  return encodeURI(`${base}/storage/v1/object/public/${raw}`);
-};
+  };
 
   const getProductPrice = (p: any) => Number(p?.price ?? 0);
 
-  /** ===== Base list ===== */
   const baseList = useMemo(() => products, [products]);
 
   const filtered = useMemo(() => {
@@ -342,7 +358,6 @@ const getProductImageUrl = (p: any) => {
     if (activeSS) {
       const ss = ssList.find((x: any) => x.slug === activeSS);
       if (ss) {
-        // CURRENT DB: products.subsubcategory_id
         list = list.filter((p: any) => String(p.subsubcategory_id) === String(ss.id));
       }
     }
@@ -360,7 +375,7 @@ const getProductImageUrl = (p: any) => {
       ? `Ka hel ${titlePrimary} (${titleSecondary}) online MatoMart – raashin iyo alaabooyin tayo leh oo lagu keeno gudaha Soomaaliya.`
       : `Shop ${titleSecondary} (${titlePrimary}) online in Somalia with MatoMart – quality groceries and essentials delivered fast.`;
 
-  /** ===== Cart totals (use online_config pricing if present) ===== */
+  /** ===== Cart totals ===== */
   const cartTotals = useMemo(() => {
     let total = 0;
     let count = 0;
@@ -384,7 +399,7 @@ const getProductImageUrl = (p: any) => {
     return { total, count };
   }, [items, products]);
 
-  /** ===== Subcategory JSON-LD ===== */
+  /** ===== JSON-LD ===== */
   const jsonLdString = useMemo(() => {
     try {
       const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -424,6 +439,7 @@ const getProductImageUrl = (p: any) => {
     return <main className="min-h-screen bg-white p-6 text-black">Subcategory not found.</main>;
   }
 
+  /** ===== NEW ProductAdd UX ===== */
   function ProductAdd({ p }: { p: any }) {
     const productId = String(p?.id);
     const item = (items ?? []).find((i: any) => String(i.productId) === productId);
@@ -431,94 +447,98 @@ const getProductImageUrl = (p: any) => {
 
     const cfg = normalizeConfigLite(p?.online_config, p);
 
-    const rawDraft = qtyDraft[productId] ?? String(cfg.min);
-    const draftNum = parseNum(rawDraft);
-    const draftQty = normalizeQty(Number.isFinite(draftNum) ? draftNum : cfg.min, cfg.min, cfg.step, cfg.is_weight);
+    // Stock from products table
+    const stock = Number(p?.qty ?? 0);
+    const outOfStock = !Number.isFinite(stock) || stock <= 0;
 
-    const exactOptions = cfg.options.filter((o) => o.type === "exact");
-    const bulkOptions = cfg.options.filter((o) => o.type === "bulk");
-
-    const applyDraft = (nextQty: number) => {
-      const normalized = normalizeQty(nextQty, cfg.min, cfg.step, cfg.is_weight);
-      setQtyDraft((prev) => ({ ...prev, [productId]: String(normalized) }));
-    };
-
-    const addUsingDraft = () => {
-      (addItem as any)(productId, null as any, draftQty);
+    const addNow = () => {
+      const startQty = normalizeQty(cfg.min, cfg.min, cfg.step, cfg.is_weight);
+      (addItem as any)(productId, null as any, startQty);
       setJustAddedId(productId);
+      setQtyDraft((prev) => ({ ...prev, [productId]: String(startQty) }));
     };
 
     const minus = () => {
-      const next = normalizeQty(inCartQty - cfg.step, cfg.min, cfg.step, cfg.is_weight);
+      const nextRaw = inCartQty - cfg.step;
+      if (nextRaw <= 0) {
+        (setQty as any)(productId, null as any, 0);
+        setQtyDraft((prev) => ({ ...prev, [productId]: String(cfg.min) }));
+        return;
+      }
+      const next = normalizeQty(nextRaw, cfg.min, cfg.step, cfg.is_weight);
       (setQty as any)(productId, null as any, next);
+      setQtyDraft((prev) => ({ ...prev, [productId]: String(next) }));
     };
 
     const plus = () => {
       const next = normalizeQty(inCartQty + cfg.step, cfg.min, cfg.step, cfg.is_weight);
       (setQty as any)(productId, null as any, next);
+      setQtyDraft((prev) => ({ ...prev, [productId]: String(next) }));
     };
 
+    // Not in cart -> single Add button
+    if (!item) {
+      return (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={addNow}
+            disabled={outOfStock}
+            className={`w-full h-10 rounded-2xl text-[13px] font-extrabold active:scale-[0.99] transition shadow-sm ${
+              outOfStock ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-[#0E5C1C] text-white"
+            }`}
+          >
+            {outOfStock
+              ? lang === "en"
+                ? "Out of stock"
+                : "Waa ka dhammaatay"
+              : lang === "en"
+              ? "Add to cart"
+              : "Ku dar gaadhiga"}
+          </button>
+
+          {cfg.is_weight && !outOfStock && (
+            <div className="mt-1 text-[10px] text-gray-600 font-semibold">
+              {lang === "en"
+                ? `Starts at ${fmtQty(cfg.min, cfg.unit, true)} • Step ${fmtQty(cfg.step, cfg.unit, true)}`
+                : `Waxay ka bilaabataa ${fmtQty(cfg.min, cfg.unit, true)} • Tallaabo ${fmtQty(cfg.step, cfg.unit, true)}`}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // In cart -> - qty +
     return (
-      <div className="mt-2">
-        {(exactOptions.length > 0 || bulkOptions.length > 0) && (
-          <div className="flex flex-wrap gap-2">
-            {exactOptions.map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                onClick={() => applyDraft(Number(o.qty ?? cfg.min))}
-                className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-[11px] font-bold text-gray-900"
-              >
-                {o.label}
-              </button>
-            ))}
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={minus}
+          className="w-10 h-10 rounded-full bg-[#0B6EA9] text-white text-xl font-extrabold grid place-items-center active:scale-[0.99]"
+          aria-label="decrease"
+        >
+          −
+        </button>
 
-            {bulkOptions.map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                onClick={() => applyDraft(Number(o.min_qty ?? cfg.min))}
-                className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-[11px] font-bold text-gray-900"
-              >
-                {o.label}
-              </button>
-            ))}
+        <div className="flex-1">
+          <div className="w-full h-10 rounded-2xl border border-gray-200 bg-white text-[13px] font-extrabold text-gray-900 grid place-items-center">
+            {fmtQty(inCartQty, cfg.unit, cfg.is_weight)}
           </div>
-        )}
-
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            className="h-10 w-[110px] rounded-xl border border-gray-200 px-3 text-sm font-semibold text-gray-900"
-            type="number"
-            step={String(cfg.step)}
-            min={cfg.min}
-            value={qtyDraft[productId] ?? String(cfg.min)}
-            onChange={(e) => setQtyDraft((prev) => ({ ...prev, [productId]: e.target.value }))}
-          />
-          <div className="text-[11px] text-gray-500 font-semibold">{fmtQty(draftQty, cfg.unit, cfg.is_weight)}</div>
+          {cfg.is_weight && (
+            <div className="mt-1 text-[10px] text-gray-600 font-semibold text-center">
+              {lang === "en" ? `Step ${fmtQty(cfg.step, cfg.unit, true)}` : `Tallaabo ${fmtQty(cfg.step, cfg.unit, true)}`}
+            </div>
+          )}
         </div>
 
-        {!item ? (
-          <button
-            onClick={addUsingDraft}
-            className="mt-2 w-full h-10 rounded-xl border-2 border-[#0B6EA9] text-[#0B6EA9] font-bold flex items-center justify-center gap-2 active:scale-[0.99] transition"
-          >
-            {lang === "en" ? "Add" : "Ku dar"}{" "}
-            <span className="text-xs opacity-80">({fmtQty(draftQty, cfg.unit, cfg.is_weight)})</span>
-          </button>
-        ) : (
-          <div className="mt-2 flex items-center justify-between">
-            <button onClick={minus} className="w-10 h-10 rounded-full bg-[#0B6EA9] text-white text-xl font-bold grid place-items-center">
-              −
-            </button>
-
-            <div className="text-sm font-extrabold text-gray-900">{fmtQty(inCartQty, cfg.unit, cfg.is_weight)}</div>
-
-            <button onClick={plus} className="w-10 h-10 rounded-full bg-[#0B6EA9] text-white text-xl font-bold grid place-items-center">
-              +
-            </button>
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={plus}
+          className="w-10 h-10 rounded-full bg-[#0B6EA9] text-white text-xl font-extrabold grid place-items-center active:scale-[0.99]"
+          aria-label="increase"
+        >
+          +
+        </button>
       </div>
     );
   }
@@ -527,9 +547,15 @@ const getProductImageUrl = (p: any) => {
 
   return (
     <>
-      {jsonLdString && <script type="application/ld+json" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: jsonLdString }} />}
+      {jsonLdString && (
+        <script
+          type="application/ld+json"
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: jsonLdString }}
+        />
+      )}
 
-      <main className="min-h-screen bg-[#F4F6F8] pb-28">
+      <main className="min-h-screen bg-[#F4F6F8] pb-0 overflow-hidden">
         <div className="bg-white border-b">
           <div className="mx-auto max-w-md px-4 py-3">
             <SearchBar />
@@ -542,56 +568,82 @@ const getProductImageUrl = (p: any) => {
             <div className="leading-tight">
               <div className="text-[13px] font-semibold text-gray-900">{loading ? "..." : titlePrimary}</div>
               <div className="text-[10px] text-gray-500">{loading ? "" : titleSecondary}</div>
-              {!loading && <p className="mt-0.5 text-[10px] text-gray-500 max-w-xs leading-snug">{seoLine}</p>}
             </div>
             <div className="w-8" />
           </div>
         </section>
 
         {/* MAIN */}
-        <section className={`mx-auto max-w-md grid ${hasRail ? "grid-cols-[72px_1fr]" : "grid-cols-1"}`}>
+        <section
+          className={`mx-auto max-w-md grid ${hasRail ? "grid-cols-[82px_1fr]" : "grid-cols-1"}`}
+          style={{ height: "calc(100vh - 128px)" }}
+        >
           {/* LEFT RAIL */}
           {hasRail && (
-            <aside className="bg-gray-50 border-r px-1.5 py-2 space-y-1.5">
+            <aside className="bg-white border-r px-2 py-2">
               <button
                 type="button"
-                onClick={() => setActiveSS(null)}
-                className={`w-full flex items-center justify-center rounded-xl px-2 py-3 ${
-                  activeSS === null ? "bg-[#0B6EA9]/10 border border-[#0B6EA9]" : "bg-white border border-gray-200"
-                }`}
+                onClick={() => {
+                  setActiveSS(null);
+                  try {
+                    paneRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                  } catch {}
+                }}
+                className="w-full flex flex-col items-center justify-center rounded-2xl px-2 py-2"
               >
-                <span className={`text-[11px] font-bold ${activeSS === null ? "text-[#0B6EA9]" : "text-gray-800"}`}>
-                  {lang === "en" ? "ALL" : "DHAMMAAN"}
-                </span>
+                <AllIcon active={activeSS === null} />
+                <div
+                  className={`mt-1 text-[10px] font-extrabold ${activeSS === null ? "text-[#0E5C1C]" : "text-gray-800"}`}
+                >
+                  ALL
+                </div>
               </button>
 
-              {ssList.map((ss: any) => {
-                const isActive = activeSS === ss.slug;
-                const primary = getLabel(ss, lang);
-                const img = safeImg(ss.img);
+              <div className="mt-2 space-y-2">
+                {ssList.map((ss: any) => {
+                  const isActive = activeSS === ss.slug;
+                  const primary = getLabel(ss, lang);
+                  const img = safeImg(ss.img);
 
-                return (
-                  <button key={ss.id} type="button" onClick={() => setActiveSS(ss.slug)} className="w-full flex flex-col items-center rounded-xl px-1.5 py-2">
-                    <div className={`w-14 h-14 rounded-xl overflow-hidden relative border ${isActive ? "border-[#0B6EA9]" : "border-gray-200"} bg-white`}>
-                      {img ? (
-                        <Image src={img} alt={primary} fill className="object-contain p-2" />
-                      ) : (
-                        <div className="w-full h-full grid place-items-center text-[10px] text-gray-400">
-                          {lang === "en" ? "No image" : "Sawir ma jiro"}
-                        </div>
-                      )}
-                    </div>
-                    <div className="mt-1 text-[10px] text-center leading-tight">
-                      <div className={isActive ? "text-[#0B6EA9] font-semibold" : "text-gray-800 font-semibold"}>{primary}</div>
-                    </div>
-                  </button>
-                );
-              })}
+                  return (
+                    <button
+                      key={ss.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveSS(ss.slug);
+                        try {
+                          paneRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                        } catch {}
+                      }}
+                      className={`w-full flex flex-col items-center rounded-2xl px-1.5 py-2 border transition ${
+                        isActive ? "bg-[#0E5C1C] border-[#0E5C1C]" : "bg-white border-gray-200"
+                      }`}
+                    >
+                      <div className="w-14 h-14 rounded-2xl overflow-hidden relative bg-white">
+                        {img ? (
+                          <Image src={img} alt={primary} fill className="object-contain p-2" />
+                        ) : (
+                          <div className="w-full h-full grid place-items-center text-[10px] text-gray-400">
+                            {lang === "en" ? "No image" : "Sawir ma jiro"}
+                          </div>
+                        )}
+                      </div>
+                      <div
+                        className={`mt-1 text-[10px] text-center leading-tight font-extrabold ${
+                          isActive ? "text-white" : "text-gray-800"
+                        }`}
+                      >
+                        {primary}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </aside>
           )}
 
-          {/* RIGHT GRID */}
-          <div className="p-3">
+          {/* RIGHT GRID (scrollable) */}
+          <div ref={paneRef} className="overflow-y-auto p-3 pb-36">
             <div className="grid grid-cols-2 gap-2">
               {loading ? (
                 <div className="col-span-2 bg-white rounded-2xl border p-4 text-sm text-gray-600">Loading...</div>
@@ -604,29 +656,43 @@ const getProductImageUrl = (p: any) => {
                     const basePrice = getProductPrice(p);
                     const imgUrl = getProductImageUrl(p);
 
-                    // compute pricing based on current draft qty/options
                     const cfg = normalizeConfigLite(p?.online_config, p);
                     const rawDraft = qtyDraft[pid] ?? String(cfg.min);
                     const draftNum = parseNum(rawDraft);
-                    const draftQty = normalizeQty(Number.isFinite(draftNum) ? draftNum : cfg.min, cfg.min, cfg.step, cfg.is_weight);
+                    const draftQty = normalizeQty(
+                      Number.isFinite(draftNum) ? draftNum : cfg.min,
+                      cfg.min,
+                      cfg.step,
+                      cfg.is_weight
+                    );
 
                     const unitPrice = pickUnitPriceLite(cfg, basePrice, draftQty);
                     const lineTotal = unitPrice * draftQty;
+                    const baseTotal = Number(basePrice) * draftQty;
+                    const off = pctOff(baseTotal, lineTotal);
+
+                    const hasTiers = (cfg.options?.length ?? 0) > 0;
 
                     return (
-                      <div key={pid} className="rounded-2xl shadow-sm overflow-hidden border relative flex flex-col bg-white border-gray-200">
-                        <div className="relative pt-3 px-3 pb-2 flex-1">
+                      <div key={pid} className="rounded-2xl overflow-hidden border bg-white border-gray-200">
+                        <div className="relative px-3 pt-3">
                           {justAddedId === pid ? (
-                            <div className="absolute left-2 top-2 text-[11px] px-2 py-1 rounded-full bg-green-600 text-white font-bold shadow">
-                              {lang === "en" ? "Added ✓" : "Waa la daray ✓"}
+                            <div className="absolute left-2 top-2 text-[10px] px-2 py-1 rounded-full bg-[#0E5C1C] text-white font-extrabold shadow">
+                              {lang === "en" ? "Added" : "Waa la daray"} ✓
                             </div>
                           ) : null}
 
                           <Link href={`/product/${encodeURIComponent(rawSlug)}`} className="block">
                             {imgUrl ? (
-                              <Image src={imgUrl} alt={name || "Product"} width={220} height={220} className="mx-auto h-32 object-contain w-full" />
+                              <Image
+                                src={imgUrl}
+                                alt={name || "Product"}
+                                width={220}
+                                height={220}
+                                className="mx-auto h-24 object-contain w-full"
+                              />
                             ) : (
-                              <div className="mx-auto h-32 w-full grid place-items-center text-[11px] text-gray-400">
+                              <div className="mx-auto h-24 w-full grid place-items-center text-[11px] text-gray-400">
                                 {lang === "en" ? "No image" : "Sawir ma jiro"}
                               </div>
                             )}
@@ -634,25 +700,48 @@ const getProductImageUrl = (p: any) => {
                         </div>
 
                         <div className="px-3 pb-3">
-                          <div className="text-[13px] font-semibold text-gray-900 line-clamp-2 min-h-[32px]">{name || "—"}</div>
-
-                          {/* Price (updates based on qty/options) */}
-                          <div className="mt-2 flex items-end justify-between gap-2">
-                            <div>
-                              <div className="text-[18px] font-extrabold text-gray-900 leading-none">{money(lineTotal)}</div>
-                              <div className="mt-0.5 text-[10px] text-gray-500 font-semibold">
-                                {money(unitPrice)} / {cfg.unit} • {fmtQty(draftQty, cfg.unit, cfg.is_weight)}
-                              </div>
-                            </div>
+                          <div className="text-[12px] font-extrabold text-gray-900 line-clamp-2 min-h-[30px]">
+                            {name || "—"}
                           </div>
 
-                          <div className="h-[8px]" />
+                          {/* Pricing */}
+                          <div className="mt-1 flex items-end justify-between gap-2">
+                            <div>
+                              <div className="flex items-baseline gap-2">
+                                <div className="text-[16px] font-extrabold text-gray-900 leading-none">
+                                  {money(lineTotal)}
+                                </div>
+                                {off >= 5 ? (
+                                  <div className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#E8F7ED] text-[#0E5C1C]">
+                                    -{off}%
+                                  </div>
+                                ) : null}
+                              </div>
 
-                          <div className="mt-1">
+                              <div className="mt-0.5 text-[10px] text-gray-600 font-semibold">
+                                {money(unitPrice)} / {cfg.unit} • {fmtQty(draftQty, cfg.unit, cfg.is_weight)}
+                              </div>
+
+                              {hasTiers ? <BulkHint cfg={cfg} /> : null}
+                            </div>
+
+                            {off >= 5 ? (
+                              <div className="text-right">
+                                <div className="text-[10px] text-gray-400 line-through font-bold">{money(baseTotal)}</div>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="mt-2">
                             <ProductAdd p={p} />
                           </div>
 
-                          <div className="mt-1 text-[11px] font-semibold text-[#0F8A4B]">⚡ {lang === "en" ? "Quick" : "Degdeg"}</div>
+                          {/* Out of stock at bottom */}
+                          {Number(p?.qty ?? 0) <= 0 && (
+                            <div className="mt-2 pt-2 border-t border-gray-100 text-[11px] font-extrabold text-red-600">
+                              {lang === "en" ? "Out of stock" : "Waa ka dhammaatay"}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -666,14 +755,24 @@ const getProductImageUrl = (p: any) => {
                 </>
               )}
             </div>
+
+            {/* SEO at bottom */}
+            {!loading && (
+              <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-3 text-[10px] text-gray-500 leading-snug">
+                {seoLine}
+              </div>
+            )}
           </div>
         </section>
 
-        {/* STICKY CART BAR (already pushed up above bottom nav) */}
+        {/* STICKY CART BAR */}
         {cartTotals.count > 0 && (
           <div className="fixed left-0 right-0 z-50" style={{ bottom: "calc(88px + env(safe-area-inset-bottom))" }}>
             <div className="mx-auto max-w-md px-3">
-              <Link href="/cart" className="flex items-center justify-between bg-[#0B6EA9] text-white rounded-2xl px-4 py-3 shadow-lg">
+              <Link
+                href="/cart"
+                className="flex items-center justify-between bg-[#0B6EA9] text-white rounded-2xl px-4 py-3 shadow-lg"
+              >
                 <div>
                   <div className="text-xs opacity-90">
                     {cartTotals.count} {lang === "en" ? "item" : "shay"}

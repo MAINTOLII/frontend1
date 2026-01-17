@@ -17,6 +17,7 @@ type CartItem = { productId: string; variantId?: string | null; qty: number };
 function useLanguage() {
   const [lang, setLang] = useState<Lang>("en");
 
+  // initial read
   useEffect(() => {
     try {
       const v = (localStorage.getItem("matomart_lang") as Lang | null) ?? "en";
@@ -26,7 +27,35 @@ function useLanguage() {
     }
   }, []);
 
-  return { lang, setLang };
+  // listen for updates (same tab + cross tab)
+  useEffect(() => {
+    const onLang = () => {
+      try {
+        const v = (localStorage.getItem("matomart_lang") as Lang | null) ?? "en";
+        setLang(v === "so" ? "so" : "en");
+      } catch {
+        setLang("en");
+      }
+    };
+
+    window.addEventListener("matomart_lang_change", onLang as any);
+    window.addEventListener("storage", onLang);
+
+    return () => {
+      window.removeEventListener("matomart_lang_change", onLang as any);
+      window.removeEventListener("storage", onLang);
+    };
+  }, []);
+
+  const setLangPersist = (next: Lang) => {
+    setLang(next);
+    try {
+      localStorage.setItem("matomart_lang", next);
+    } catch {}
+    window.dispatchEvent(new Event("matomart_lang_change"));
+  };
+
+  return { lang, setLang: setLangPersist };
 }
 
 function useCart() {
@@ -77,6 +106,11 @@ type SubcategoryRow = {
 type VariantRow = {
   id: string;
   sell_price: number | string | null;
+};
+
+type ProductPriceRow = {
+  id: string;
+  price: number | string | null;
 };
 
 type CategoryWithSubcats = CategoryRow & { subcats: SubcategoryRow[] };
@@ -179,6 +213,15 @@ async function getVariantsByIds(ids: string[]): Promise<VariantRow[]> {
   return (data ?? []) as VariantRow[];
 }
 
+async function getProductsByIds(ids: string[]): Promise<ProductPriceRow[]> {
+  if (!supabase) return [];
+  const uniq = Array.from(new Set(ids.filter(Boolean)));
+  if (uniq.length === 0) return [];
+  const { data, error } = await supabase.from("products").select("id,price").in("id", uniq);
+  if (error) throw error;
+  return (data ?? []) as ProductPriceRow[];
+}
+
 export default function HomePage() {
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [activeSlide, setActiveSlide] = useState(0);
@@ -207,7 +250,6 @@ export default function HomePage() {
         if (!alive) return;
         setCategoryMap(cats);
       } catch (e: any) {
-        // ✅ show real message (Supabase errors often stringify to {})
         console.error("HOME LOAD CATEGORIES ERROR:", e?.message ?? e);
       } finally {
         if (alive) setLoadingCats(false);
@@ -241,30 +283,27 @@ export default function HomePage() {
     if (!categoryMap.length) return;
 
     const observer = new IntersectionObserver(
-(entries) => {
-  // Pick the section whose top is closest to the sticky header (but not far above it)
-  const visible = entries
-    .filter((e) => e.isIntersecting)
-    .map((e) => ({
-      slug: e.target.getAttribute("data-cat-slug") || "",
-      top: e.boundingClientRect.top,
-    }))
-    .filter((x) => !!x.slug);
+      (entries) => {
+        // Pick the section whose top is closest to the sticky header
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .map((e) => ({
+            slug: e.target.getAttribute("data-cat-slug") || "",
+            top: e.boundingClientRect.top,
+          }))
+          .filter((x) => !!x.slug);
 
-  if (visible.length === 0) return;
+        if (visible.length === 0) return;
 
-  // Where content begins under sticky header
-  const targetTop = compactTopCats ? 170 : 210;
-
-  visible.sort((a, b) => Math.abs(a.top - targetTop) - Math.abs(b.top - targetTop));
-  setActiveCatSlug(visible[0].slug);
-},
+        const targetTop = compactTopCats ? 170 : 210;
+        visible.sort((a, b) => Math.abs(a.top - targetTop) - Math.abs(b.top - targetTop));
+        setActiveCatSlug(visible[0].slug);
+      },
       {
         root: null,
-        // a bit more forgiving because the header is sticky
-// Give more bottom room so the last section can become active near page end
-rootMargin: compactTopCats ? "-140px 0px -45% 0px" : "-180px 0px -45% 0px",
-threshold: 0.12,
+        // Give more bottom room so the last section can become active near page end
+        rootMargin: compactTopCats ? "-140px 0px -45% 0px" : "-180px 0px -45% 0px",
+        threshold: 0.12,
       }
     );
 
@@ -278,38 +317,41 @@ threshold: 0.12,
       observer.disconnect();
     };
   }, [categoryMap, compactTopCats]);
-// Fallback: when user reaches the bottom, ensure the last category becomes active
-useEffect(() => {
-  if (!categoryMap.length) return;
 
-  const last = [...categoryMap].reverse().find((c) => !!c.slug);
-  if (!last?.slug) return;
+  // Fallback: when user reaches the bottom, ensure the last category becomes active
+  useEffect(() => {
+    if (!categoryMap.length) return;
 
-  let raf = 0;
-  const onScroll = () => {
-    if (raf) cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(() => {
-      const scrollY = window.scrollY || 0;
-      const winH = window.innerHeight || 0;
-      const docH = document.documentElement.scrollHeight || 0;
+    const last = [...categoryMap].reverse().find((c) => !!c.slug);
+    if (!last?.slug) return;
 
-      // within 120px of bottom
-      if (scrollY + winH >= docH - 120) {
-        setActiveCatSlug(last.slug as string);
-      }
-    });
-  };
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const scrollY = window.scrollY || 0;
+        const winH = window.innerHeight || 0;
+        const docH = document.documentElement.scrollHeight || 0;
 
-  window.addEventListener("scroll", onScroll, { passive: true });
-  onScroll();
+        // within 120px of bottom
+        if (scrollY + winH >= docH - 120) {
+          setActiveCatSlug(last.slug as string);
+        }
+      });
+    };
 
-  return () => {
-    if (raf) cancelAnimationFrame(raf);
-    window.removeEventListener("scroll", onScroll);
-  };
-}, [categoryMap]);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, [categoryMap]);
+
   // Lookup map for cart totals
   const [variantMap, setVariantMap] = useState<Record<string, VariantRow>>({});
+  const [productMap, setProductMap] = useState<Record<string, ProductPriceRow>>({});
 
   useEffect(() => {
     let alive = true;
@@ -317,15 +359,19 @@ useEffect(() => {
     (async () => {
       const cart = (Array.isArray(items) ? (items as any) : []) as CartItem[];
       const vids = cart.map((x) => x.variantId).filter((v): v is string => v != null);
+      const pids = cart.map((x) => x.productId).filter((v): v is string => v != null);
 
       try {
-        const vs = await getVariantsByIds(vids);
+        const [vs, ps] = await Promise.all([getVariantsByIds(vids), getProductsByIds(pids)]);
         if (!alive) return;
 
         const vm: Record<string, VariantRow> = {};
         for (const v of vs) vm[v.id] = v;
-
         setVariantMap(vm);
+
+        const pm: Record<string, ProductPriceRow> = {};
+        for (const p of ps) pm[p.id] = p;
+        setProductMap(pm);
       } catch (e) {
         console.error(e);
       }
@@ -336,6 +382,7 @@ useEffect(() => {
     };
   }, [items]);
 
+  // Keep a generous offset so section titles never hide under the sticky TopNavbar + top categories strip.
   const headerOffset = compactTopCats ? 210 : 230;
 
   const scrollToCategory = (slug: string) => {
@@ -359,14 +406,16 @@ useEffect(() => {
 
     for (const it of cart) {
       const v = it.variantId != null ? variantMap[it.variantId] : null;
-      const price = Number(v?.sell_price ?? 0);
+      const p = it.productId != null ? productMap[it.productId] : null;
+      const unit = it.variantId != null ? v?.sell_price : p?.price;
+      const price = Number(unit ?? 0);
 
       total += price * (it.qty ?? 1);
       count += it.qty ?? 1;
     }
 
     return { total, count };
-  }, [items, variantMap]);
+  }, [items, variantMap, productMap]);
 
   const cartCtaPrimary = lang === "en" ? "Go to Cart →" : "U gudub Gaadhiga →";
 
@@ -377,8 +426,9 @@ useEffect(() => {
       {/* TOP CATEGORIES STRIP (separate and compactable) */}
       {categoryMap.length > 0 && (
         <section className="sticky top-[120px] z-40 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/75">
-          <div className={`${compactTopCats ? "py-2" : "py-2"}`}>
-<div className="mx-auto max-w-md px-2 flex flex-wrap justify-between gap-2 overflow-x-hidden">              {categoryMap.map((cat) => {
+          <div className={compactTopCats ? "py-1" : "py-2"}>
+            <div className="mx-auto max-w-md px-2 flex flex-nowrap items-start justify-between gap-1 overflow-x-hidden">
+              {categoryMap.map((cat) => {
                 const label = ((lang === "en" ? cat.name_en : cat.name_so) ?? "").trim();
                 const imgSrc =
                   typeof cat.img === "string" && cat.img.trim().length > 0
@@ -391,23 +441,23 @@ useEffect(() => {
                   <button
                     key={cat.id}
                     onClick={() => cat.slug && scrollToCategory(cat.slug)}
-className={`w-[72px] px-1 rounded-xl transition-colors duration-200 ${
-  isActive ? "bg-[#E3F2FF] shadow-sm" : "bg-transparent"
-}`}
+                    className={`w-[64px] px-0.5 rounded-xl transition-colors duration-200 ${
+                      isActive ? "bg-[#E3F2FF] shadow-sm" : "bg-transparent"
+                    }`}
                     type="button"
                     disabled={!cat.slug}
                     title={!cat.slug ? "Category slug missing" : ""}
                   >
                     <div
                       className={`mx-auto overflow-hidden flex items-center justify-center transition-all duration-200 rounded-full ${
-                        compactTopCats ? "h-0 w-0 opacity-0" : "h-12 w-12 opacity-100"
+                        compactTopCats ? "h-0 w-0 opacity-0" : "h-10 w-10 opacity-100"
                       } ${isActive ? "bg-[#DBEAFE] ring-2 ring-[#0B6EA9] shadow-md" : "bg-blue-50"}`}
                     >
                       <Image
                         src={imgSrc}
                         alt={label || "Category"}
-                        width={48}
-                        height={48}
+                        width={40}
+                        height={40}
                         className="w-full h-full object-contain p-1"
                       />
                     </div>
@@ -430,10 +480,19 @@ className={`w-[72px] px-1 rounded-xl transition-colors duration-200 ${
       {/* HERO / AD SLIDESHOW */}
       <section className="bg-white pt-0">
         <div className="relative overflow-hidden rounded-2xl bg-white h-[140px] w-[90%] mx-auto">
-          <div className="flex transition-transform duration-500" style={{ transform: `translateX(-${activeSlide * 100}%)` }}>
+          <div
+            className="flex transition-transform duration-500"
+            style={{ transform: `translateX(-${activeSlide * 100}%)` }}
+          >
             {HERO_SLIDES.map((s) => (
               <div key={s.id} className="flex-none w-full h-[140px] flex items-center justify-center bg-white">
-                <Image src={s.img} alt="promo" width={500} height={140} className="max-h-full w-full object-contain" />
+                <Image
+                  src={s.img}
+                  alt="promo"
+                  width={500}
+                  height={140}
+                  className="max-h-full w-full object-contain"
+                />
               </div>
             ))}
           </div>
@@ -476,10 +535,14 @@ className={`w-[72px] px-1 rounded-xl transition-colors duration-200 ${
                   if (cat.slug) sectionRefs.current[cat.slug] = el;
                 }}
                 data-cat-slug={cat.slug ?? ""}
-                className="scroll-mt-[190px] pb-3"
+                className="scroll-mt-[230px] pb-3"
               >
                 <div className="mb-1">
-                  <PrimarySecondary primary={catPrimary || "—"} center={false} primaryClass="text-lg font-bold text-gray-900" />
+                  <PrimarySecondary
+                    primary={catPrimary || "—"}
+                    center={false}
+                    primaryClass="text-lg font-bold text-gray-900"
+                  />
                 </div>
 
                 <div className="grid grid-cols-3 gap-x-3 gap-y-2.5">
@@ -506,7 +569,10 @@ className={`w-[72px] px-1 rounded-xl transition-colors duration-200 ${
                         </div>
 
                         <div className="mt-0.5">
-                          <PrimarySecondary primary={subPrimary || "—"} primaryClass="text-[12px] font-semibold text-gray-800" />
+                          <PrimarySecondary
+                            primary={subPrimary || "—"}
+                            primaryClass="text-[12px] font-semibold text-gray-800"
+                          />
                         </div>
                       </Link>
                     );
@@ -518,11 +584,14 @@ className={`w-[72px] px-1 rounded-xl transition-colors duration-200 ${
         )}
       </section>
 
-      {/* STICKY GO TO CART BAR */}
-      {cartTotals.count > 0 && (
+      {/* STICKY GO TO CART BAR (only when cart has items AND total count > 0) */}
+      {items.length > 0 && cartTotals.count > 0 && (
         <div className="fixed left-0 right-0 bottom-[100px] z-40">
           <div className="mx-auto max-w-md px-3">
-            <Link href="/cart" className="flex items-center justify-between bg-[#0B6EA9] text-white rounded-2xl px-4 py-3 shadow-lg">
+            <Link
+              href="/cart"
+              className="flex items-center justify-between bg-[#0B6EA9] text-white rounded-2xl px-4 py-3 shadow-lg"
+            >
               <div>
                 <div className="text-xs opacity-90">
                   {cartTotals.count} item{cartTotals.count > 1 ? "s" : ""} in cart

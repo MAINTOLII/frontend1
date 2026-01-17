@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 
 import { supabase } from "@/lib/supabaseClient";
 import { useCart } from "@/context/CartContext";
@@ -41,7 +41,7 @@ function slugify(input: string) {
   return s
     .toLowerCase()
     .replace(/&/g, " and ")
-    .replace(/(\d)\.(\d)/g, "$1$2") // 2.5 -> 25 (optional but helps)
+    .replace(/(\d)\.(\d)/g, "$1$2")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
@@ -50,7 +50,6 @@ function prettyTitleFromSlug(input: string) {
   const raw = String(input ?? "").trim();
   if (!raw) return "";
 
-  // Decode any URL-encoded characters (defensive)
   let s = raw;
   try {
     s = decodeURIComponent(raw);
@@ -58,23 +57,17 @@ function prettyTitleFromSlug(input: string) {
     s = raw;
   }
 
-  // If it's an SEO slug, turn into words. If it already has spaces, keep it.
   const looksSeo = /[-_]/.test(s) && !/\s/.test(s);
-  if (looksSeo) {
-    s = s.replace(/[-_]+/g, " ");
-  }
+  if (looksSeo) s = s.replace(/[-_]+/g, " ");
 
   s = s.replace(/\s+/g, " ").trim();
   if (!s) return "";
 
-  // Light title-case (keeps numbers/units intact)
   const words = s.split(" ");
   const out = words
     .map((w) => {
       const lw = w.toLowerCase();
-      // keep common units/abbrevs lowercase
       if (["kg", "g", "l", "ml", "pcs"].includes(lw)) return lw;
-      // keep tokens that contain digits as-is (e.g. 2.5kg)
       if (/\d/.test(w)) return w;
       return w.charAt(0).toUpperCase() + w.slice(1);
     })
@@ -163,7 +156,9 @@ function normalizeConfigLite(raw: any, p: any): OnlineConfigLite {
 function pickUnitPriceLite(cfg: OnlineConfigLite, basePrice: number, qty: number): number {
   const q2 = Number(qty.toFixed(3));
 
-  const exact = cfg.options.find((o: any) => o.type === "exact" && Number(((o as any).qty ?? 0).toFixed(3)) === q2) as any;
+  const exact = cfg.options.find(
+    (o: any) => o.type === "exact" && Number(((o as any).qty ?? 0).toFixed(3)) === q2
+  ) as any;
   if (exact) return Number(exact.unit_price) || 0;
 
   const bulk = (cfg.options as any[])
@@ -218,6 +213,7 @@ type ProductRow = {
   qty_step: number | null;
   online_config: any;
   img: string | null;
+  subsubcategory_id: number | null;
 };
 
 type ProductImageRow = {
@@ -230,7 +226,12 @@ type ProductImageRow = {
 
 export default function ProductPageClient() {
   const { slug } = useParams<{ slug: string }>();
-  const { addItem } = useCart();
+  const router = useRouter();
+
+  // cart (defensive)
+  const cartAny = useCart() as any;
+  const addItem = cartAny?.addItem;
+  const cartItemsAny = cartAny?.items ?? cartAny?.cartItems ?? cartAny?.cart ?? cartAny?.state?.items ?? [];
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -239,13 +240,36 @@ export default function ProductPageClient() {
   const [images, setImages] = useState<ProductImageRow[]>([]);
   const [activeImgIdx, setActiveImgIdx] = useState<number>(0);
   const [qtyDraft, setQtyDraft] = useState<string>("");
+  const [fbw, setFbw] = useState<ProductRow[]>([]);
+
+  // flash (only animation), but “in cart” is persistent
+  const [addedFlash, setAddedFlash] = useState(false);
+  const [addedMsg, setAddedMsg] = useState<string | null>(null);
+  const flashTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+    };
+  }, []);
+
+  const triggerAddedFlash = (msg: string) => {
+    setAddedMsg(msg);
+    setAddedFlash(true);
+    if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = window.setTimeout(() => {
+      setAddedFlash(false);
+      setAddedMsg(null);
+    }, 900);
+  };
 
   useEffect(() => {
     let alive = true;
 
-    async function findProductByParam(param: string) {
-      const baseSelect = "id,slug,qty,price,is_weight,min_order_qty,qty_step,online_config,img";
+    const baseSelect =
+      "id,slug,qty,price,is_weight,min_order_qty,qty_step,online_config,img,subsubcategory_id,is_online";
 
+    async function findProductByParam(param: string) {
       const decoded = (() => {
         try {
           return decodeURIComponent(param);
@@ -256,25 +280,21 @@ export default function ProductPageClient() {
 
       const inputSeo = slugify(decoded);
 
-      // 1) exact
       let res = await supabase.from("products").select(baseSelect).eq("slug", decoded).maybeSingle();
       if (res.data) return res;
 
-      // 2) sometimes param is already decoded
       const rawTrim = String(param ?? "").trim();
       if (!res.data && rawTrim && rawTrim !== decoded) {
         res = await supabase.from("products").select(baseSelect).eq("slug", rawTrim).maybeSingle();
         if (res.data) return res;
       }
 
-      // 3) if seo-hyphen form, try spaces
       if (!res.data && decoded.includes("-")) {
         const spaceSlug = decoded.replace(/-/g, " ");
         res = await supabase.from("products").select(baseSelect).eq("slug", spaceSlug).maybeSingle();
         if (res.data) return res;
       }
 
-      // 4) smart candidate pick: ilike pattern, then slugify compare
       if (!res.data && decoded.includes("-") && inputSeo) {
         const pattern = `%${decoded.replace(/-/g, "%")}%`;
         const cand = await supabase.from("products").select(baseSelect).ilike("slug", pattern).limit(25);
@@ -284,7 +304,6 @@ export default function ProductPageClient() {
         }
       }
 
-      // 5) final: case-insensitive single (safe-ish)
       if (!res.data && decoded.length >= 3) {
         res = await supabase.from("products").select(baseSelect).ilike("slug", decoded).maybeSingle();
         if (res.data) return res;
@@ -300,6 +319,7 @@ export default function ProductPageClient() {
       setImages([]);
       setActiveImgIdx(0);
       setQtyDraft("");
+      setFbw([]);
 
       try {
         const rawParam = String(slug ?? "");
@@ -308,14 +328,13 @@ export default function ProductPageClient() {
         if (pRes.error) throw pRes.error;
         if (!pRes.data) {
           if (!alive) return;
-          setErr("Product not found");
+          setErr("Alaabtan lama helin");
           setLoading(false);
           return;
         }
 
         const p = pRes.data as any as ProductRow;
 
-        // images optional (your table has no created_at — keep order by sort_order only)
         const imgRes = await supabase
           .from("product_images")
           .select("id,product_id,path,alt,sort_order")
@@ -330,6 +349,42 @@ export default function ProductPageClient() {
         const cfg = normalizeConfigLite(p.online_config, p);
         setQtyDraft(String(cfg.min));
 
+        // SEO redirect
+        try {
+          const desired = slugify(String(p.slug ?? ""));
+          const currentDecoded = (() => {
+            try {
+              return decodeURIComponent(String(slug ?? ""));
+            } catch {
+              return String(slug ?? "");
+            }
+          })();
+          const current = slugify(currentDecoded);
+          if (desired && current && desired !== current) {
+            router.replace(`/product/${encodeURIComponent(desired)}`);
+          }
+        } catch {}
+
+        // FBW
+        try {
+          if (p.subsubcategory_id != null) {
+            const rel = await supabase
+              .from("products")
+              .select("id,slug,qty,price,is_weight,min_order_qty,qty_step,online_config,img,subsubcategory_id")
+              .eq("subsubcategory_id", p.subsubcategory_id)
+              .neq("id", p.id)
+              .eq("is_online", true)
+              .gt("qty", 0)
+              .limit(3);
+
+            if (alive) setFbw((rel.data ?? []) as any);
+          } else {
+            if (alive) setFbw([]);
+          }
+        } catch {
+          if (alive) setFbw([]);
+        }
+
         setLoading(false);
       } catch (e: any) {
         if (!alive) return;
@@ -342,14 +397,19 @@ export default function ProductPageClient() {
     return () => {
       alive = false;
     };
-  }, [slug]);
+  }, [slug, router]);
 
   const cfg = useMemo(() => normalizeConfigLite(product?.online_config, product), [product]);
 
   const draftNum = useMemo(() => parseNum(qtyDraft), [qtyDraft]);
   const draftQty = useMemo(() => {
     const base = cfg?.min ?? 1;
-    return normalizeQty(Number.isFinite(draftNum) ? draftNum : base, cfg?.min ?? base, cfg?.step ?? 1, !!cfg?.is_weight);
+    return normalizeQty(
+      Number.isFinite(draftNum) ? draftNum : base,
+      cfg?.min ?? base,
+      cfg?.step ?? 1,
+      !!cfg?.is_weight
+    );
   }, [draftNum, cfg]);
 
   const unitPrice = useMemo(() => {
@@ -358,6 +418,31 @@ export default function ProductPageClient() {
   }, [product, cfg, draftQty]);
 
   const lineTotal = useMemo(() => unitPrice * draftQty, [unitPrice, draftQty]);
+
+  const baseUnitPrice = useMemo(() => Number(product?.price ?? 0), [product?.price]);
+  const baseTotal = useMemo(() => baseUnitPrice * draftQty, [baseUnitPrice, draftQty]);
+
+  const discountPct = useMemo(() => {
+    if (!(baseTotal > 0) || !(lineTotal >= 0)) return 0;
+    const p = Math.round(((baseTotal - lineTotal) / baseTotal) * 100);
+    return Number.isFinite(p) ? Math.max(0, p) : 0;
+  }, [baseTotal, lineTotal]);
+
+  const bestBulk = useMemo(() => {
+    const bulk = (cfg.options || []).filter((o) => o.type === "bulk") as any[];
+    if (!bulk.length) return null;
+    const sorted = [...bulk].sort((a, b) => Number(a.unit_price ?? 0) - Number(b.unit_price ?? 0));
+    const b = sorted[0];
+    if (!b) return null;
+    const minq = Number(b.min_qty ?? 0);
+    const maxq = b.max_qty == null ? null : Number(b.max_qty);
+    return {
+      unit_price: Number(b.unit_price ?? 0),
+      min_qty: Number.isFinite(minq) ? minq : 0,
+      max_qty: maxq != null && Number.isFinite(maxq) ? maxq : null,
+      label: String(b.label ?? "").trim(),
+    };
+  }, [cfg.options]);
 
   const heroUrl = useMemo(() => {
     const chosen = images?.[activeImgIdx]?.path;
@@ -374,15 +459,39 @@ export default function ProductPageClient() {
     return "/example.png";
   }, [product?.img, images, activeImgIdx]);
 
+  // ✅ persistent “in cart” qty
+  const inCartQty = useMemo(() => {
+    const pid = String(product?.id ?? "");
+    if (!pid) return 0;
+
+    const arr = Array.isArray(cartItemsAny) ? cartItemsAny : [];
+    let sum = 0;
+
+    for (const it of arr) {
+      const p = String((it?.productId ?? it?.product_id ?? it?.product?.id ?? "") as any);
+      if (p !== pid) continue;
+
+      const qRaw = it?.qty ?? it?.quantity ?? it?.count ?? it?.amount;
+      const q = Number(qRaw);
+      if (Number.isFinite(q)) sum += q;
+    }
+
+    return sum;
+  }, [cartItemsAny, product?.id]);
+
+  const isInCart = inCartQty > 0;
+
   function onAdd() {
     if (!product) return;
+    if (typeof addItem !== "function") return;
     (addItem as any)(String(product.id), null as any, draftQty);
+    triggerAddedFlash("Waa lagu daray Cart");
   }
 
   const onShare = useCallback(async () => {
     try {
       const url = typeof window !== "undefined" ? window.location.href : "";
-      const title = prettyTitleFromSlug(product?.slug || "") || product?.slug || "Product";
+      const title = prettyTitleFromSlug(product?.slug || "") || product?.slug || "Alaab";
 
       if (typeof navigator !== "undefined" && (navigator as any).share) {
         await (navigator as any).share({ title, url });
@@ -391,32 +500,30 @@ export default function ProductPageClient() {
 
       if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url);
-        alert("Link copied");
+        alert("Link waa la koobiyeeyay");
         return;
       }
 
-      if (url) prompt("Copy link:", url);
-    } catch {
-      // ignore
-    }
+      if (url) prompt("Koobi link:", url);
+    } catch {}
   }, [product?.slug]);
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#F4F6F8] pb-[180px]">
-        <div className="mx-auto max-w-md px-4 py-6 text-sm text-gray-700">Loading…</div>
+      <main className="min-h-screen bg-[#F4F6F8] pb-[240px]">
+        <div className="mx-auto max-w-md px-4 py-5 text-sm text-gray-700">Wuu soo shubanayaa…</div>
       </main>
     );
   }
 
   if (err || !product) {
     return (
-      <main className="min-h-screen bg-[#F4F6F8] pb-[180px]">
-        <div className="mx-auto max-w-md px-4 py-6">
-          <Link href="/" className="text-[#0B6EA9] font-semibold text-sm">
-            ← Back
-          </Link>
-          <div className="mt-4 bg-white border rounded-2xl p-4 text-sm text-gray-800">{err || "Product not found"}</div>
+      <main className="min-h-screen bg-[#F4F6F8] pb-[240px]">
+        <div className="mx-auto max-w-md px-4 py-5">
+          <button type="button" onClick={() => router.back()} className="text-[#0B6EA9] font-semibold text-sm">
+            ← Dib u noqo
+          </button>
+          <div className="mt-4 bg-white border rounded-2xl p-4 text-sm text-gray-800">{err || "Alaabtan lama helin"}</div>
         </div>
       </main>
     );
@@ -429,17 +536,20 @@ export default function ProductPageClient() {
   const lowStock = Number(product.qty ?? 0) > 0 && Number(product.qty ?? 0) <= 5;
 
   return (
-    <main className="min-h-screen bg-[#F4F6F8] pb-[180px]">
+    <main className="min-h-screen bg-[#F4F6F8] pb-[240px]">
       <section className="mx-auto max-w-md">
         <div className="bg-white border-b">
-          <div className="px-4 pt-4 pb-3">
+          <div className="px-4 pt-3 pb-2">
             <div className="flex items-center justify-between">
-              <Link href="/" className="text-[#0B6EA9] font-semibold text-sm">← Back</Link>
+              <button type="button" onClick={() => router.back()} className="text-[#0B6EA9] font-semibold text-sm">
+                ← Dib u noqo
+              </button>
+
               <button
                 type="button"
                 onClick={onShare}
                 className="h-9 w-9 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center"
-                aria-label="Share"
+                aria-label="Wadaag"
               >
                 <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 text-gray-700" aria-hidden="true">
                   <path
@@ -453,36 +563,53 @@ export default function ProductPageClient() {
               </button>
             </div>
 
-            <div className="mt-3 flex items-start justify-between gap-3">
+            <div className="mt-2 flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-sm text-gray-600">More from</div>
+                <div className="text-sm text-gray-600">Alaab</div>
                 <div className="text-gray-900 font-extrabold text-lg leading-tight truncate">{title}</div>
               </div>
               {lowStock ? (
-                <div className="shrink-0 text-red-600 font-extrabold text-sm">Only {Number(product.qty)} left!</div>
+                <div className="shrink-0 text-red-600 font-extrabold text-sm">Kaliya {Number(product.qty)} ayaa haray!</div>
               ) : null}
             </div>
-
-            {lowStock ? (
-              <div className="mt-3 flex gap-2">
-                <span className="inline-flex items-center rounded-full bg-red-600 px-3 py-1 text-[12px] font-extrabold text-white">
-                  LOW STOCK
-                </span>
-              </div>
-            ) : null}
           </div>
         </div>
 
+        {/* ✅ Joogto: haddii alaabtu ku jirto Cart */}
+        {isInCart && (
+          <div className="px-4 pt-2">
+            <div className="rounded-2xl border bg-white px-4 py-3 flex items-center gap-3">
+              <div className="h-8 w-8 rounded-full bg-[#E8F7ED] text-[#0E5C1C] grid place-items-center font-extrabold">
+                ✓
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-extrabold text-gray-900">
+                  {addedFlash ? addedMsg ?? "Waa lagu daray Cart" : "Ku jira Cart"}
+                </div>
+                <div className="text-[12px] text-gray-600 font-semibold truncate">
+                  Tirada ku jirta: {cfg.is_weight ? Number(inCartQty.toFixed(2)) : Math.round(inCartQty)}
+                </div>
+              </div>
+              <Link
+                href="/cart"
+                className="ml-auto h-10 px-4 rounded-2xl bg-[#0B6EA9] text-white text-sm font-extrabold grid place-items-center"
+              >
+                Eeg Cart
+              </Link>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white">
-          <div className="px-4 pt-4">
+          <div className="px-4 pt-2">
             <div className="relative bg-gray-50 rounded-2xl border overflow-hidden">
-              <div className="relative h-[380px] w-full">
-                <Image src={heroUrl} alt={String(title || "Product image")} fill className="object-contain p-6" priority />
+              <div className="relative h-[250px] w-full">
+                <Image src={heroUrl} alt={String(title || "Sawirka alaabta")} fill className="object-contain p-4" priority />
               </div>
             </div>
 
             {images.length > 0 ? (
-              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
                 {images.slice(0, 8).map((img, idx) => {
                   const url = buildPublicImageUrl(img.path);
                   const active = idx === activeImgIdx;
@@ -492,10 +619,10 @@ export default function ProductPageClient() {
                       type="button"
                       onClick={() => setActiveImgIdx(idx)}
                       className={
-                        "relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-white " +
-                        (active ? "border-[#0B6EA9] ring-2 ring-[#0B6EA9]/20" : "border-gray-200")
+                        "relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border bg-white " +
+                        (active ? "border-[#0B6EA9]" : "border-gray-200")
                       }
-                      aria-label={`Thumbnail ${idx + 1}`}
+                      aria-label={`Sawir ${idx + 1}`}
                     >
                       <Image src={url || "/example.png"} alt="" fill className="object-contain p-2" />
                     </button>
@@ -505,16 +632,40 @@ export default function ProductPageClient() {
             ) : null}
           </div>
 
-          <div className="px-4 pt-4 pb-2">
-            <div className="text-3xl font-extrabold text-gray-900">{money(lineTotal)}</div>
-            <div className="mt-1 text-[12px] text-gray-500 font-semibold">
+          {/* PRICE */}
+          <div className="px-4 pt-3 pb-1">
+            <div className="flex items-center gap-2">
+              <div className="text-3xl font-extrabold text-gray-900">{money(lineTotal)}</div>
+
+              {discountPct >= 5 && (
+                <div className="h-7 px-2 rounded-full bg-[#E8F7ED] text-[#0E5C1C] text-[12px] font-extrabold grid place-items-center">
+                  -{discountPct}%
+                </div>
+              )}
+
+              {discountPct >= 5 && (
+                <div className="text-[12px] text-gray-400 font-bold line-through">{money(baseTotal)}</div>
+              )}
+            </div>
+
+            <div className="mt-1 text-[12px] text-gray-600 font-semibold">
               {money(unitPrice)} / {cfg.unit} • {fmtQty(draftQty, cfg.unit, cfg.is_weight)}
             </div>
+
+            {bestBulk && (
+              <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                <div className="text-[12px] font-extrabold text-gray-900">Qiimo jumlo</div>
+                <div className="text-[12px] text-gray-700 font-semibold">
+                  {money(bestBulk.unit_price)} / {cfg.unit} laga bilaabo {bestBulk.min_qty}+ {cfg.unit}
+                  {bestBulk.max_qty != null ? ` (ugu badnaan ${bestBulk.max_qty} ${cfg.unit})` : ""}
+                </div>
+              </div>
+            )}
           </div>
 
           {(exactOptions.length > 0 || bulkOptions.length > 0) ? (
             <div className="px-4 pb-2">
-              <div className="text-sm font-extrabold text-gray-900">Choose option</div>
+              <div className="text-sm font-extrabold text-gray-900">Xulo ikhtiyaar</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {exactOptions.map((o) => (
                   <button
@@ -541,7 +692,7 @@ export default function ProductPageClient() {
           ) : null}
 
           <div className="px-4 pb-4">
-            <div className="text-sm font-extrabold text-gray-900">Quantity</div>
+            <div className="text-sm font-extrabold text-gray-900">Tirada</div>
             <div className="mt-2 flex items-center gap-2">
               <input
                 className="h-11 w-[160px] rounded-xl border border-gray-200 px-3 text-sm font-semibold text-gray-900"
@@ -555,62 +706,78 @@ export default function ProductPageClient() {
             </div>
           </div>
 
-          <div className="px-4 pb-4">
-            <div className="rounded-2xl border bg-white p-4">
-              <div className="text-sm font-extrabold text-gray-900">Get it delivered by</div>
-              <div className="mt-3 flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-gray-100 flex items-center justify-center">
-                  <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6 text-gray-800" aria-hidden="true">
-                    <path d="M3 7h11v10H3V7Zm11 3h4l3 3v4h-7V10Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-                    <path d="M7 19a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm12 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" fill="currentColor" />
-                  </svg>
-                </div>
-                <div>
-                  <div className="text-sm font-extrabold text-gray-900">Scheduled</div>
-                  <div className="text-[12px] text-gray-600 font-semibold">Same-day delivery when available</div>
-                </div>
+          {fbw.length > 0 && (
+            <div className="px-4 pb-6">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-extrabold text-gray-900">Badanaa lala iibsado</div>
+                <div className="text-[11px] font-semibold text-gray-500">Isla qayb</div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {fbw.map((rp) => {
+                  const rTitle = prettyTitleFromSlug(rp.slug) || rp.slug;
+                  const rImg = buildPublicImageUrl(rp.img);
+                  const rCfg = normalizeConfigLite(rp.online_config, rp);
+                  const rStartQty = normalizeQty(rCfg.min, rCfg.min, rCfg.step, !!rCfg.is_weight);
+                  const rUnitPrice = pickUnitPriceLite(rCfg, Number(rp.price ?? 0), rStartQty);
+
+                  return (
+                    <div key={rp.id} className="rounded-2xl border bg-white p-2">
+                      <Link href={`/product/${encodeURIComponent(slugify(rp.slug))}`} className="block">
+                        <div className="relative h-20 w-full bg-gray-50 rounded-xl overflow-hidden border">
+                          <Image src={rImg || "/example.png"} alt={rTitle} fill className="object-contain p-2" />
+                        </div>
+                        <div className="mt-2 text-[11px] font-extrabold text-gray-900 line-clamp-2 min-h-[32px]">
+                          {rTitle}
+                        </div>
+                        <div className="mt-1 text-[11px] font-extrabold text-gray-900">{money(rUnitPrice * rStartQty)}</div>
+                      </Link>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (typeof addItem === "function") {
+                            (addItem as any)(String(rp.id), null as any, rStartQty);
+                            triggerAddedFlash("Waa lagu daray Cart");
+                          }
+                        }}
+                        className="mt-2 w-full h-9 rounded-xl bg-[#0E5C1C] text-white text-[12px] font-extrabold active:scale-[0.99]"
+                      >
+                        Ku dar
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          </div>
-
-          <div className="bg-white border-t">
-            <div className="px-4 py-4">
-              <div className="text-sm font-extrabold text-gray-900">Highlights</div>
-              <ul className="mt-2 list-disc pl-5 text-sm text-gray-700 leading-relaxed">
-                <li>Fresh stock, fast delivery</li>
-                <li>Quality checked items</li>
-                <li>Easy returns support</li>
-              </ul>
-
-              <div className="mt-6 border-t pt-4">
-                <div className="text-sm font-extrabold text-gray-900">Product Details</div>
-                <p className="mt-2 text-sm text-gray-700 leading-relaxed">No description available.</p>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
 
-        <div className="fixed inset-x-0 bottom-[76px] z-50">
-          <div className="pointer-events-none h-6 bg-gradient-to-t from-white to-transparent" />
-          <div className="border-t bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/70">
+        {/* ✅ Sticky Add-to-cart: kor ayaan u qaaday (si uusan u dul saarnayn BottomNav) */}
+        <div className="fixed inset-x-0 z-40" style={{ bottom: "calc(92px + env(safe-area-inset-bottom))" }}>
+          <div className="border-t bg-white">
             <div className="mx-auto max-w-md px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-lg font-extrabold text-gray-900">{money(lineTotal)}</div>
-                  <div className="text-[11px] font-semibold text-gray-500">Including VAT</div>
+                  <div className="text-[11px] font-semibold text-gray-500">Wadar</div>
                 </div>
+
                 <button
                   type="button"
                   onClick={onAdd}
-                  className="h-12 flex-1 max-w-[210px] rounded-2xl font-extrabold shadow-sm transition active:scale-[0.99] bg-[#0B6EA9] text-white"
+                  className={
+                    "h-12 flex-1 max-w-[220px] rounded-2xl font-extrabold transition active:scale-[0.99] text-white " +
+                    (isInCart ? "bg-[#0E5C1C]" : addedFlash ? "bg-[#0E5C1C]" : "bg-[#0B6EA9]")
+                  }
                 >
-                  Add to cart
+                  {isInCart ? "Ku jira Cart ✓" : addedFlash ? "Waa lagu daray ✓" : "Ku dar Cart"}
                 </button>
               </div>
             </div>
-            <div className="h-[env(safe-area-inset-bottom)]" />
           </div>
         </div>
+
       </section>
     </main>
   );
