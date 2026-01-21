@@ -441,17 +441,17 @@ export default function HomePage() {
                   <button
                     key={cat.id}
                     onClick={() => cat.slug && scrollToCategory(cat.slug)}
-                    className={`w-[64px] px-0.5 rounded-xl transition-colors duration-200 ${
-                      isActive ? "bg-[#E3F2FF] shadow-sm" : "bg-transparent"
-                    }`}
+className={`w-[72px] px-1 rounded-2xl transition-all duration-200 active:scale-[0.98] ${
+  isActive ? "bg-[#E3F2FF] shadow-sm ring-1 ring-[#0B6EA9]/20" : "bg-white/40"
+}`}
                     type="button"
                     disabled={!cat.slug}
                     title={!cat.slug ? "Category slug missing" : ""}
                   >
                     <div
                       className={`mx-auto overflow-hidden flex items-center justify-center transition-all duration-200 rounded-full ${
-                        compactTopCats ? "h-0 w-0 opacity-0" : "h-10 w-10 opacity-100"
-                      } ${isActive ? "bg-[#DBEAFE] ring-2 ring-[#0B6EA9] shadow-md" : "bg-blue-50"}`}
+compactTopCats ? "h-0 w-0 opacity-0" : "h-11 w-11 opacity-100"                      } 
+${isActive ? "bg-[#DBEAFE] ring-2 ring-[#0B6EA9] shadow-md" : "bg-[#F1F5F9] ring-1 ring-black/5"}`}
                     >
                       <Image
                         src={imgSrc}
@@ -463,9 +463,9 @@ export default function HomePage() {
                     </div>
 
                     <div
-                      className={`${compactTopCats ? "mt-0" : "mt-1"} text-[11px] text-center leading-tight font-semibold transition-colors ${
-                        isActive ? "text-[#0B6EA9]" : "text-[#0B3C6E]"
-                      }`}
+className={`${compactTopCats ? "mt-0" : "mt-1"} text-[12px] text-center leading-tight font-bold tracking-tight transition-colors ${
+  isActive ? "text-[#0B6EA9]" : "text-[#0B3C6E]"
+}`}
                     >
                       {label || "—"}
                     </div>
@@ -500,7 +500,7 @@ export default function HomePage() {
       </section>
 
       {/* PROMO CARDS ROW */}
-      <section className="bg-white px-4 pt-0 -mt-2">
+      {/* <section className="bg-white px-4 pt-0 -mt-2">
         <div className="relative">
           <div className="flex gap-2 overflow-x-auto pb-1 snap-x snap-mandatory">
             {[
@@ -518,7 +518,7 @@ export default function HomePage() {
             ))}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* CATEGORY SECTIONS */}
       <section className="bg-white px-3 pb-6 pt-1">

@@ -497,13 +497,7 @@ export default function SubcategoryPage() {
               : "Ku dar gaadhiga"}
           </button>
 
-          {cfg.is_weight && !outOfStock && (
-            <div className="mt-1 text-[10px] text-gray-600 font-semibold">
-              {lang === "en"
-                ? `Starts at ${fmtQty(cfg.min, cfg.unit, true)} • Step ${fmtQty(cfg.step, cfg.unit, true)}`
-                : `Waxay ka bilaabataa ${fmtQty(cfg.min, cfg.unit, true)} • Tallaabo ${fmtQty(cfg.step, cfg.unit, true)}`}
-            </div>
-          )}
+
         </div>
       );
     }
@@ -524,11 +518,7 @@ export default function SubcategoryPage() {
           <div className="w-full h-10 rounded-2xl border border-gray-200 bg-white text-[13px] font-extrabold text-gray-900 grid place-items-center">
             {fmtQty(inCartQty, cfg.unit, cfg.is_weight)}
           </div>
-          {cfg.is_weight && (
-            <div className="mt-1 text-[10px] text-gray-600 font-semibold text-center">
-              {lang === "en" ? `Step ${fmtQty(cfg.step, cfg.unit, true)}` : `Tallaabo ${fmtQty(cfg.step, cfg.unit, true)}`}
-            </div>
-          )}
+
         </div>
 
         <button
@@ -555,8 +545,7 @@ export default function SubcategoryPage() {
         />
       )}
 
-      <main className="min-h-screen bg-[#F4F6F8] pb-0 overflow-hidden">
-        <div className="bg-white border-b">
+<main className="min-h-screen bg-[#F5FAFF] pb-0 overflow-hidden">        <div className="bg-white border-b">
           <div className="mx-auto max-w-md px-4 py-3">
             <SearchBar />
           </div>
@@ -593,8 +582,7 @@ export default function SubcategoryPage() {
               >
                 <AllIcon active={activeSS === null} />
                 <div
-                  className={`mt-1 text-[10px] font-extrabold ${activeSS === null ? "text-[#0E5C1C]" : "text-gray-800"}`}
-                >
+className={`mt-1 text-[10px] font-extrabold ${activeSS === null ? "text-[#0B6EA9]" : "text-gray-800"}`}                >
                   ALL
                 </div>
               </button>
