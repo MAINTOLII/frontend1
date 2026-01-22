@@ -6,7 +6,9 @@ import Link from "next/link";
 import TopNavbar from "@/components/TopNavbar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-
+import Hero from "@/components/Hero";
+import TopCategoriesStrip from "@/components/TopCategoriesStrip";
+import Promo from "@/components/Promo";
 // --- Minimal, self-contained hooks so the homepage works immediately.
 // Later, we can move these into /context and /lib once the storefront structure is finalized.
 
@@ -423,102 +425,16 @@ export default function HomePage() {
     <main className="min-h-screen bg-white text-black">
       <TopNavbar />
 
-      {/* TOP CATEGORIES STRIP (separate and compactable) */}
-      {categoryMap.length > 0 && (
-        <section className="sticky top-[120px] z-40 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/75">
-          <div className={compactTopCats ? "py-1" : "py-2"}>
-            <div className="mx-auto max-w-md px-2 flex flex-nowrap items-start justify-between gap-1 overflow-x-hidden">
-              {categoryMap.map((cat) => {
-                const label = ((lang === "en" ? cat.name_en : cat.name_so) ?? "").trim();
-                const imgSrc =
-                  typeof cat.img === "string" && cat.img.trim().length > 0
-                    ? cat.img.trimEnd()
-                    : "https://ecfxrmhrfjqdmqewzrfz.supabase.co/storage/v1/object/public/product-images/subcategories/baleware.webp";
-
-                const isActive = !!cat.slug && activeCatSlug === cat.slug;
-
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => cat.slug && scrollToCategory(cat.slug)}
-className={`w-[72px] px-1 rounded-2xl transition-all duration-200 active:scale-[0.98] ${
-  isActive ? "bg-[#E3F2FF] shadow-sm ring-1 ring-[#0B6EA9]/20" : "bg-white/40"
-}`}
-                    type="button"
-                    disabled={!cat.slug}
-                    title={!cat.slug ? "Category slug missing" : ""}
-                  >
-                    <div
-                      className={`mx-auto overflow-hidden flex items-center justify-center transition-all duration-200 rounded-full ${
-compactTopCats ? "h-0 w-0 opacity-0" : "h-11 w-11 opacity-100"                      } 
-${isActive ? "bg-[#DBEAFE] ring-2 ring-[#0B6EA9] shadow-md" : "bg-[#F1F5F9] ring-1 ring-black/5"}`}
-                    >
-                      <Image
-                        src={imgSrc}
-                        alt={label || "Category"}
-                        width={40}
-                        height={40}
-                        className="w-full h-full object-contain p-1"
-                      />
-                    </div>
-
-                    <div
-className={`${compactTopCats ? "mt-0" : "mt-1"} text-[12px] text-center leading-tight font-bold tracking-tight transition-colors ${
-  isActive ? "text-[#0B6EA9]" : "text-[#0B3C6E]"
-}`}
-                    >
-                      {label || "—"}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* HERO / AD SLIDESHOW */}
-      <section className="bg-white pt-0">
-        <div className="relative overflow-hidden rounded-2xl bg-white h-[140px] w-[90%] mx-auto">
-          <div
-            className="flex transition-transform duration-500"
-            style={{ transform: `translateX(-${activeSlide * 100}%)` }}
-          >
-            {HERO_SLIDES.map((s) => (
-              <div key={s.id} className="flex-none w-full h-[140px] flex items-center justify-center bg-white">
-                <Image
-                  src={s.img}
-                  alt="promo"
-                  width={500}
-                  height={140}
-                  className="max-h-full w-full object-contain"
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* PROMO CARDS ROW */}
-      {/* <section className="bg-white px-4 pt-0 -mt-2">
-        <div className="relative">
-          <div className="flex gap-2 overflow-x-auto pb-1 snap-x snap-mandatory">
-            {[
-              "https://ecfxrmhrfjqdmqewzrfz.supabase.co/storage/v1/object/public/product-images/ads/bar1.webp",
-              "https://ecfxrmhrfjqdmqewzrfz.supabase.co/storage/v1/object/public/product-images/ads/bar2.webp",
-              "https://ecfxrmhrfjqdmqewzrfz.supabase.co/storage/v1/object/public/product-images/ads/bar3.webp",
-              "https://ecfxrmhrfjqdmqewzrfz.supabase.co/storage/v1/object/public/product-images/ads/bar4.webp",
-            ].map((url, i) => (
-              <div
-                key={i}
-                className="min-w-[100px] h-[140px] rounded-2xl overflow-hidden bg-white shadow-sm flex-shrink-0 snap-start border border-gray-200"
-              >
-                <Image src={url} alt="promo" width={100} height={140} className="w-full h-full object-cover" />
-              </div>
-            ))}
-          </div>
-        </div>
-      </section> */}
+{/* TOP CATEGORIES STRIP (moved to component) */}
+<TopCategoriesStrip
+  categoryMap={categoryMap}
+  lang={lang}
+  compact={compactTopCats}
+  activeSlug={activeCatSlug}
+  onPick={(slug) => scrollToCategory(slug)}
+/>
+<Hero />
+<Promo />
 
       {/* CATEGORY SECTIONS */}
       <section className="bg-white px-3 pb-6 pt-1">
