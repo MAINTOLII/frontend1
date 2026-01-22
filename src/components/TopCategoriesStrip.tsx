@@ -29,9 +29,9 @@ export default function TopCategoriesStrip({
   if (!categoryMap || categoryMap.length === 0) return null;
 
   return (
-    <section className="sticky top-[120px] z-40 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/75">
-      <div className={compact ? "py-1" : "py-2"}>
-        <div className="mx-auto max-w-md px-2 flex flex-nowrap items-start justify-between gap-1 overflow-x-hidden">
+    <section className="sticky top-[100px] z-40 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/75">
+      <div className={compact ? "py-0.5" : "py-1"}>
+        <div className="mx-auto max-w-md px-1.5 flex flex-nowrap items-start justify-between gap-0.5 overflow-x-hidden">
           {categoryMap.map((cat) => {
             const label = ((lang === "en" ? cat.name_en : cat.name_so) ?? "").trim();
 
@@ -46,7 +46,7 @@ export default function TopCategoriesStrip({
               <button
                 key={cat.id}
                 onClick={() => cat.slug && onPick(cat.slug)}
-                className={`w-[72px] px-1 rounded-2xl transition-all duration-200 active:scale-[0.98] ${
+                className={`w-[64px] px-1 rounded-2xl transition-all duration-200 active:scale-[0.98] ${
                   isActive ? "bg-[#E3F2FF] shadow-sm ring-1 ring-[#0B6EA9]/20" : "bg-white/40"
                 }`}
                 type="button"
@@ -55,7 +55,7 @@ export default function TopCategoriesStrip({
               >
                 <div
                   className={`mx-auto overflow-hidden flex items-center justify-center transition-all duration-200 rounded-full ${
-                    compact ? "h-0 w-0 opacity-0" : "h-11 w-11 opacity-100"
+                    compact ? "h-0 w-0 opacity-0" : "h-9 w-9 opacity-100"
                   } ${
                     isActive
                       ? "bg-[#DBEAFE] ring-2 ring-[#0B6EA9] shadow-md"
@@ -65,14 +65,14 @@ export default function TopCategoriesStrip({
                   <Image
                     src={imgSrc}
                     alt={label || "Category"}
-                    width={40}
-                    height={40}
+                    width={32}
+                    height={32}
                     className="w-full h-full object-contain p-1"
                   />
                 </div>
 
                 <div
-                  className={`${compact ? "mt-0" : "mt-1"} text-[12px] text-center leading-tight font-bold tracking-tight transition-colors ${
+                  className={`${compact ? "mt-0" : "mt-0.5"} text-[11px] text-center leading-tight font-bold tracking-tight transition-colors ${
                     isActive ? "text-[#0B6EA9]" : "text-[#0B3C6E]"
                   }`}
                 >

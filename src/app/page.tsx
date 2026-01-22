@@ -385,8 +385,7 @@ export default function HomePage() {
   }, [items]);
 
   // Keep a generous offset so section titles never hide under the sticky TopNavbar + top categories strip.
-  const headerOffset = compactTopCats ? 210 : 230;
-
+const headerOffset = compactTopCats ? 180 : 200;
   const scrollToCategory = (slug: string) => {
     const el = sectionRefs.current[slug];
     if (!el) return;
@@ -426,19 +425,23 @@ export default function HomePage() {
       <TopNavbar />
 
 {/* TOP CATEGORIES STRIP (moved to component) */}
-<TopCategoriesStrip
-  categoryMap={categoryMap}
-  lang={lang}
-  compact={compactTopCats}
-  activeSlug={activeCatSlug}
-  onPick={(slug) => scrollToCategory(slug)}
-/>
-<Hero />
-<Promo />
+<div className="-mb-4">
+  <TopCategoriesStrip
+    categoryMap={categoryMap}
+    lang={lang}
+    compact={compactTopCats}
+    activeSlug={activeCatSlug}
+    onPick={(slug) => scrollToCategory(slug)}
+  />
+</div>
 
+<Hero />
+
+<div className="-mt-3">
+  <Promo />
+</div>
       {/* CATEGORY SECTIONS */}
-      <section className="bg-white px-3 pb-6 pt-1">
-        {loadingCats && categoryMap.length === 0 ? (
+<section className="bg-white px-3 pb-6 pt-0">        {loadingCats && categoryMap.length === 0 ? (
           <div className="py-10 text-center text-sm text-gray-500">Loading…</div>
         ) : (
           categoryMap.map((cat) => {

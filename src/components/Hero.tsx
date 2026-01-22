@@ -46,9 +46,9 @@ export default function Hero({
   }, [intervalMs]);
 
   return (
-    <section className="bg-white pt-0">
+    <section className="bg-white py-0">
       <div
-        className="relative overflow-hidden rounded-2xl bg-white w-[90%] mx-auto"
+        className="relative overflow-hidden rounded-2xl bg-white w-full"
         style={{ height }}
       >
         <div
@@ -66,7 +66,7 @@ export default function Hero({
                 alt="promo"
                 width={900}
                 height={height}
-                className="max-h-full w-full object-contain"
+                className="h-full w-full object-contain"
                 priority
               />
             </div>
