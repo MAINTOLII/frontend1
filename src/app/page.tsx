@@ -166,10 +166,10 @@ function PrimarySecondary({
 }
 
 const CATEGORY_BG: Record<string, string> = {
-  groceries: "bg-[#0E5C1C]",
-  baby: "bg-[#F8B8D0]",
-  "health-beauty": "bg-[#E89A3D]",
-  household: "bg-[#8FC5E8]",
+  groceries: "bg-[#E6F7EC]",        // soft light green
+  baby: "bg-[#FFEAF3]",             // soft light pink
+  "health-beauty": "bg-[#FFF1E6]", // soft light peach
+  household: "bg-[#E8F4FF]",        // soft light blue
 };
 
 function getCategoryBg(slug: string | undefined) {
