@@ -425,7 +425,7 @@ const headerOffset = compactTopCats ? 180 : 200;
       <TopNavbar />
 
 {/* TOP CATEGORIES STRIP (moved to component) */}
-<div className="-mb-4">
+<div className="-mt-2">
   <TopCategoriesStrip
     categoryMap={categoryMap}
     lang={lang}
@@ -435,7 +435,9 @@ const headerOffset = compactTopCats ? 180 : 200;
   />
 </div>
 
-<Hero />
+<div className="-mt-3">
+  <Hero />
+</div>
 
 <div className="-mt-3">
   <Promo />
@@ -475,16 +477,16 @@ const headerOffset = compactTopCats ? 180 : 200;
                             cat.slug ?? undefined
                           )}`}
                         >
-                          <Image
-                            src={
-                              typeof sub.img === "string" && sub.img.trim().length > 0
-                                ? sub.img.trimEnd()
-                                : "https://ecfxrmhrfjqdmqewzrfz.supabase.co/storage/v1/object/public/product-images/subcategories/baleware.webp"
-                            }
-                            alt={subPrimary || "Subcategory"}
-                            fill
-                            className="object-contain"
-                          />
+<Image
+  src={
+    typeof sub.img === "string" && sub.img.trim().length > 0
+      ? sub.img.trimEnd()
+      : "https://ecfxrmhrfjqdmqewzrfz.supabase.co/storage/v1/object/public/product-images/subcategories/baleware.webp"
+  }
+  alt={subPrimary || "Subcategory"}
+  fill
+  className="object-contain scale-[1.18]"
+/>
                         </div>
 
                         <div className="mt-0.5">

@@ -238,8 +238,8 @@ export default function Promo({
                     " rounded-2xl border border-[#D9E7F5] bg-white shadow-sm overflow-hidden"
                   }
                 >
-                  <div className="h-[105px] bg-gray-100 animate-pulse" />
-                  <div className="p-3">
+                  <div className="h-[92px] bg-gray-100 animate-pulse" />
+                  <div className="p-2.5">
                     <div className="h-4 bg-gray-100 rounded w-4/5 animate-pulse" />
                     <div className="mt-2 h-6 bg-gray-100 rounded w-1/2 animate-pulse" />
                     <div className="mt-3 h-10 bg-gray-100 rounded animate-pulse" />
@@ -268,26 +268,20 @@ export default function Promo({
                     </div>
                   </div>
 
-                  <div className="absolute right-2 top-2 z-10">
-                    <div className="bg-white/90 text-[#0B3C6E] font-extrabold text-[11px] px-2 py-1 rounded-xl shadow-sm border border-gray-200">
-                      Was {money(it.originalPrice)}
-                    </div>
-                  </div>
-
-                  <div className="h-[105px] w-full flex items-center justify-center">
+                  <div className="h-[92px] w-full flex items-center justify-center">
                     <Image
                       src={it.img}
                       alt={it.name || "Discount"}
                       width={150}
-                      height={105}
-                      className="w-full h-full object-contain p-2"
+                      height={92}
+                      className="w-full h-full object-contain p-1.5"
                     />
                   </div>
                 </Link>
 
                 {/* Text + pricing + CTA */}
-                <div className="p-3">
-                  <div className="text-[13px] font-extrabold text-[#0B3C6E] leading-tight line-clamp-2">
+                <div className="p-2.5">
+                  <div className="text-[12px] font-extrabold text-[#0B3C6E] leading-tight line-clamp-2">
                     {it.name}
                   </div>
 
@@ -305,12 +299,11 @@ export default function Promo({
                     onClick={() => {
                       if (onAddToCart) onAddToCart(it.productId);
                     }}
-                    className="mt-2 w-full rounded-full bg-[#0B6EA9] text-white font-extrabold py-2 text-[12px] flex items-center justify-center gap-2 active:scale-[0.99]"
+                    className="mt-2 w-full rounded-full bg-[#0B6EA9] text-white font-extrabold py-2 text-[12px] shadow-sm ring-1 ring-black/5 active:scale-[0.99]"
                     disabled={!onAddToCart}
                     title={!onAddToCart ? "Hook this button to your cart handler via onAddToCart" : ""}
                   >
-                    <span className="text-[16px]">🛒</span>
-                    <span>Add to Cart</span>
+                    Add to Cart
                   </button>
                 </div>
               </div>
