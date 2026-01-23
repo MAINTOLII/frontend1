@@ -120,7 +120,7 @@ export default function LeftRail({
       </button>
 
       {/* LIST */}
-      <div ref={railRef} onScroll={updateRailEdges} className="mt-1.5 flex-1 min-h-0 overflow-y-auto space-y-1.5 pr-1 pb-10 pt-10">
+      <div ref={railRef} onScroll={updateRailEdges} className="mt-1 flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 pb-8 pt-3">
         {ssList.map((ss: any) => {
           const isActive = activeSS === ss.slug;
           const primary = getLabel(ss, lang);
@@ -136,7 +136,7 @@ export default function LeftRail({
                   paneRef.current?.scrollTo({ top: 0, behavior: "smooth" });
                 } catch {}
               }}
-              className={`w-full flex flex-col items-center justify-center px-2 py-2 rounded-2xl transition ${
+              className={`w-full flex flex-col items-center justify-center px-2 py-1.5 rounded-2xl transition ${
                 isActive ? "bg-[#E6F4FF]" : "bg-white"
               }`}
             >
@@ -152,7 +152,7 @@ export default function LeftRail({
               </div>
 
               {/* ONE language only */}
-              <div className="mt-1.5 text-center leading-tight">
+              <div className="mt-1 text-center leading-tight">
                 <div className={`text-[11px] font-bold tracking-tight ${isActive ? "text-[#0B6EA9]" : "text-gray-900"}`}>
                   {primary}
                 </div>

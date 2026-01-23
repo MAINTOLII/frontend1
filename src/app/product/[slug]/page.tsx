@@ -2,231 +2,34 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import BoughtTogether from "./components/Boughttogether";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-
+import StickyBar from "./components/Stickybar";
 import { supabase } from "@/lib/supabaseClient";
 import { useCart } from "@/context/CartContext";
+import { useLanguage } from "@/context/LanguageContext";
 
-// ===== helpers =====
-function money(n: number) {
-  return `$${Number(n ?? 0).toFixed(2)}`;
-}
-
-function parseNum(v: unknown): number {
-  const s = String(v ?? "").trim().replace(",", ".");
-  const n = Number(s);
-  return Number.isFinite(n) ? n : NaN;
-}
-
-function roundToStep(value: number, step: number) {
-  if (!Number.isFinite(value)) return 0;
-  if (!Number.isFinite(step) || step <= 0) return value;
-  const inv = 1 / step;
-  return Math.round(value * inv) / inv;
-}
-
-function normalizeQty(value: number, min: number, step: number, isWeight: boolean) {
-  const safeMin = Number.isFinite(min) && min > 0 ? min : isWeight ? 0.5 : 1;
-  const safeStep = Number.isFinite(step) && step > 0 ? step : isWeight ? 0.5 : 1;
-  const v = Number.isFinite(value) ? value : safeMin;
-  const clamped = v < safeMin ? safeMin : v;
-  const stepped = isWeight ? roundToStep(clamped, safeStep) : Math.round(clamped / safeStep) * safeStep;
-  const out = Math.max(safeMin, stepped);
-  return Number(out.toFixed(isWeight ? 3 : 0));
-}
-
-function slugify(input: string) {
-  const s = String(input ?? "").trim();
-  return s
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/(\d)\.(\d)/g, "$1$2")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function prettyTitleFromSlug(input: string) {
-  const raw = String(input ?? "").trim();
-  if (!raw) return "";
-
-  let s = raw;
-  try {
-    s = decodeURIComponent(raw);
-  } catch {
-    s = raw;
-  }
-
-  const looksSeo = /[-_]/.test(s) && !/\s/.test(s);
-  if (looksSeo) s = s.replace(/[-_]+/g, " ");
-
-  s = s.replace(/\s+/g, " ").trim();
-  if (!s) return "";
-
-  const words = s.split(" ");
-  const out = words
-    .map((w) => {
-      const lw = w.toLowerCase();
-      if (["kg", "g", "l", "ml", "pcs"].includes(lw)) return lw;
-      if (/\d/.test(w)) return w;
-      return w.charAt(0).toUpperCase() + w.slice(1);
-    })
-    .join(" ");
-
-  return out;
-}
-
-type OnlineOptionLite = {
-  id: string;
-  type: "exact" | "bulk";
-  label: string;
-  unit_price: number;
-  qty?: number | null;
-  min_qty?: number | null;
-  max_qty?: number | null;
-};
-
-type OnlineConfigLite = {
-  unit: string;
-  is_weight: boolean;
-  min: number;
-  step: number;
-  options: OnlineOptionLite[];
-};
-
-function defaultRulesFor(p: any) {
-  const isW = !!p?.is_weight;
-  return {
-    unit: isW ? "kg" : "pcs",
-    min: Number(p?.min_order_qty ?? (isW ? 0.5 : 1)) || (isW ? 0.5 : 1),
-    step: Number(p?.qty_step ?? (isW ? 0.5 : 1)) || (isW ? 0.5 : 1),
-    is_weight: isW,
-  };
-}
-
-function normalizeConfigLite(raw: any, p: any): OnlineConfigLite {
-  const base = defaultRulesFor(p);
-  const unit = String(raw?.unit || base.unit);
-  const is_weight = !!(raw?.is_weight ?? base.is_weight);
-
-  const minRaw = parseNum(raw?.min);
-  const stepRaw = parseNum(raw?.step);
-
-  const min = Number.isFinite(minRaw) && minRaw > 0 ? minRaw : base.min;
-  const step = Number.isFinite(stepRaw) && stepRaw > 0 ? stepRaw : base.step;
-
-  const optsRaw = Array.isArray(raw?.options) ? raw.options : [];
-  const options: OnlineOptionLite[] = optsRaw
-    .map((o: any) => {
-      const type = o?.type;
-      const label = String(o?.label ?? "").trim();
-      if ((type !== "exact" && type !== "bulk") || !label) return null;
-
-      const up = parseNum(o?.unit_price);
-      if (!Number.isFinite(up) || up < 0) return null;
-
-      if (type === "exact") {
-        const q = parseNum(o?.qty);
-        if (!Number.isFinite(q) || q <= 0) return null;
-        return { id: String(o?.id || `${label}_${q}`), type: "exact", label, qty: q, unit_price: up };
-      }
-
-      const minq = parseNum(o?.min_qty);
-      const maxq = o?.max_qty == null || String(o?.max_qty).trim() === "" ? null : parseNum(o?.max_qty);
-      if (!Number.isFinite(minq) || minq < 0) return null;
-      if (maxq != null && (!Number.isFinite(maxq) || maxq < minq)) return null;
-
-      return {
-        id: String(o?.id || `${label}_${minq}`),
-        type: "bulk",
-        label,
-        min_qty: minq,
-        max_qty: maxq ?? null,
-        unit_price: up,
-      };
-    })
-    .filter(Boolean) as OnlineOptionLite[];
-
-  const exact = options.filter((o) => o.type === "exact").sort((a, b) => Number(a.qty ?? 0) - Number(b.qty ?? 0));
-  const bulk = options.filter((o) => o.type === "bulk").sort((a, b) => Number(a.min_qty ?? 0) - Number(b.min_qty ?? 0));
-
-  return { unit, is_weight, min, step, options: [...exact, ...bulk] };
-}
-
-function pickUnitPriceLite(cfg: OnlineConfigLite, basePrice: number, qty: number): number {
-  const q2 = Number(qty.toFixed(3));
-
-  const exact = cfg.options.find(
-    (o: any) => o.type === "exact" && Number(((o as any).qty ?? 0).toFixed(3)) === q2
-  ) as any;
-  if (exact) return Number(exact.unit_price) || 0;
-
-  const bulk = (cfg.options as any[])
-    .filter((o) => o.type === "bulk" && Number(o.min_qty ?? 0) <= qty && (o.max_qty == null || qty <= Number(o.max_qty)))
-    .sort((a, b) => Number(b.min_qty ?? 0) - Number(a.min_qty ?? 0))[0];
-
-  if (bulk) return Number(bulk.unit_price) || 0;
-  return Number(basePrice) || 0;
-}
-
-function fmtQty(qty: number, unit: string, isWeight: boolean) {
-  if (!isWeight) return `${Math.round(qty)} ${unit}`;
-  if (qty > 0 && qty < 1) return `${Math.round(qty * 1000)} g`;
-  return `${Number(qty.toFixed(2))} ${unit}`;
-}
-
-function encodeUrlMaybe(u: string) {
-  try {
-    return encodeURI(u);
-  } catch {
-    return u;
-  }
-}
-
-function buildPublicImageUrl(input: any): string {
-  const s = String(input ?? "").trim();
-  if (!s) return "";
-  if (s.startsWith("http://") || s.startsWith("https://")) return encodeUrlMaybe(s);
-  if (s.startsWith("/")) return s;
-
-  const base = String(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
-  if (!base) return "";
-
-  if (s.startsWith("product-images/")) {
-    return encodeUrlMaybe(`${base}/storage/v1/object/public/${s}`);
-  }
-
-  if (s.startsWith("products/") || s.startsWith("subcategories/") || s.startsWith("categories/")) {
-    return encodeUrlMaybe(`${base}/storage/v1/object/public/product-images/${s}`);
-  }
-
-  return encodeUrlMaybe(`${base}/storage/v1/object/public/${s}`);
-}
-
-type ProductRow = {
-  id: string;
-  slug: string;
-  qty: number;
-  price: number;
-  is_weight: boolean;
-  min_order_qty: number | null;
-  qty_step: number | null;
-  online_config: any;
-  img: string | null;
-  subsubcategory_id: number | null;
-};
-
-type ProductImageRow = {
-  id: number;
-  product_id: string;
-  path: string;
-  alt: string | null;
-  sort_order: number;
-};
+import {
+  money,
+  parseNum,
+  normalizeQty,
+  slugify,
+  prettyTitleFromSlug,
+  normalizeConfigLite,
+  pickUnitPriceLite,
+  fmtQty,
+  buildPublicImageUrl,
+  type ProductRow,
+  type ProductImageRow,
+} from "./helpers";
 
 export default function ProductPageClient() {
   const { slug } = useParams<{ slug: string }>();
   const router = useRouter();
+
+  const { lang } = useLanguage() as any;
+  const isEn = lang === "en";
 
   // cart (defensive)
   const cartAny = useCart() as any;
@@ -241,6 +44,7 @@ export default function ProductPageClient() {
   const [activeImgIdx, setActiveImgIdx] = useState<number>(0);
   const [qtyDraft, setQtyDraft] = useState<string>("");
   const [fbw, setFbw] = useState<ProductRow[]>([]);
+  const [discountPrice, setDiscountPrice] = useState<number | null>(null);
 
   // flash (only animation), but “in cart” is persistent
   const [addedFlash, setAddedFlash] = useState(false);
@@ -320,6 +124,7 @@ export default function ProductPageClient() {
       setActiveImgIdx(0);
       setQtyDraft("");
       setFbw([]);
+      setDiscountPrice(null);
 
       try {
         const rawParam = String(slug ?? "");
@@ -328,12 +133,32 @@ export default function ProductPageClient() {
         if (pRes.error) throw pRes.error;
         if (!pRes.data) {
           if (!alive) return;
-          setErr("Alaabtan lama helin");
+          setErr(isEn ? "Product not found" : "Alaabtan lama helin");
           setLoading(false);
           return;
         }
 
         const p = pRes.data as any as ProductRow;
+
+        // ✅ Active discount (if any)
+        try {
+          const dRes = await supabase
+            .from("discounts")
+            .select("discount_price,is_active,sort_order")
+            .eq("product_id", p.id)
+            .eq("is_active", true)
+            .order("sort_order", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (alive) {
+            const dp = dRes?.data?.discount_price;
+            const n = dp == null ? NaN : Number(dp);
+            setDiscountPrice(Number.isFinite(n) ? n : null);
+          }
+        } catch {
+          if (alive) setDiscountPrice(null);
+        }
 
         const imgRes = await supabase
           .from("product_images")
@@ -346,8 +171,8 @@ export default function ProductPageClient() {
         setProduct(p);
         setImages((imgRes.data ?? []) as any);
 
-        const cfg = normalizeConfigLite(p.online_config, p);
-        setQtyDraft(String(cfg.min));
+        const cfg0 = normalizeConfigLite(p.online_config, p);
+        setQtyDraft(String(cfg0.min));
 
         // SEO redirect
         try {
@@ -397,7 +222,7 @@ export default function ProductPageClient() {
     return () => {
       alive = false;
     };
-  }, [slug, router]);
+  }, [slug, router, isEn]);
 
   const cfg = useMemo(() => normalizeConfigLite(product?.online_config, product), [product]);
 
@@ -412,13 +237,16 @@ export default function ProductPageClient() {
     );
   }, [draftNum, cfg]);
 
+  // ✅ unit price uses discounted base if a discount exists
   const unitPrice = useMemo(() => {
     if (!product) return 0;
-    return pickUnitPriceLite(cfg, Number(product.price ?? 0), draftQty);
-  }, [product, cfg, draftQty]);
+    const base = discountPrice != null ? discountPrice : Number(product.price ?? 0);
+    return pickUnitPriceLite(cfg, base, draftQty);
+  }, [product, cfg, draftQty, discountPrice]);
 
   const lineTotal = useMemo(() => unitPrice * draftQty, [unitPrice, draftQty]);
 
+  // original (non-discount) base
   const baseUnitPrice = useMemo(() => Number(product?.price ?? 0), [product?.price]);
   const baseTotal = useMemo(() => baseUnitPrice * draftQty, [baseUnitPrice, draftQty]);
 
@@ -485,13 +313,13 @@ export default function ProductPageClient() {
     if (!product) return;
     if (typeof addItem !== "function") return;
     (addItem as any)(String(product.id), null as any, draftQty);
-    triggerAddedFlash("Waa lagu daray Cart");
+    triggerAddedFlash(isEn ? "Added to cart" : "Waa lagu daray Cart");
   }
 
   const onShare = useCallback(async () => {
     try {
       const url = typeof window !== "undefined" ? window.location.href : "";
-      const title = prettyTitleFromSlug(product?.slug || "") || product?.slug || "Alaab";
+      const title = prettyTitleFromSlug(product?.slug || "") || product?.slug || (isEn ? "Product" : "Alaab");
 
       if (typeof navigator !== "undefined" && (navigator as any).share) {
         await (navigator as any).share({ title, url });
@@ -500,18 +328,18 @@ export default function ProductPageClient() {
 
       if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url);
-        alert("Link waa la koobiyeeyay");
+        alert(isEn ? "Link copied" : "Link waa la koobiyeeyay");
         return;
       }
 
-      if (url) prompt("Koobi link:", url);
+      if (url) prompt(isEn ? "Copy link:" : "Koobi link:", url);
     } catch {}
-  }, [product?.slug]);
+  }, [product?.slug, isEn]);
 
   if (loading) {
     return (
       <main className="min-h-screen bg-[#F4F6F8] pb-[240px]">
-        <div className="mx-auto max-w-md px-4 py-5 text-sm text-gray-700">Wuu soo shubanayaa…</div>
+        <div className="mx-auto max-w-md px-4 py-5 text-sm text-gray-700">{isEn ? "Loading…" : "Wuu soo shubanayaa…"}</div>
       </main>
     );
   }
@@ -521,9 +349,11 @@ export default function ProductPageClient() {
       <main className="min-h-screen bg-[#F4F6F8] pb-[240px]">
         <div className="mx-auto max-w-md px-4 py-5">
           <button type="button" onClick={() => router.back()} className="text-[#0B6EA9] font-semibold text-sm">
-            ← Dib u noqo
+            {isEn ? "← Back" : "← Dib u noqo"}
           </button>
-          <div className="mt-4 bg-white border rounded-2xl p-4 text-sm text-gray-800">{err || "Alaabtan lama helin"}</div>
+          <div className="mt-4 bg-white border rounded-2xl p-4 text-sm text-gray-800">
+            {err || (isEn ? "Product not found" : "Alaabtan lama helin")}
+          </div>
         </div>
       </main>
     );
@@ -535,6 +365,8 @@ export default function ProductPageClient() {
   const title = prettyTitleFromSlug(product.slug) || product.slug;
   const lowStock = Number(product.qty ?? 0) > 0 && Number(product.qty ?? 0) <= 5;
 
+  const showDiscount = discountPct > 0 && lineTotal < baseTotal - 0.005;
+
   return (
     <main className="min-h-screen bg-[#F4F6F8] pb-[240px]">
       <section className="mx-auto max-w-md">
@@ -542,14 +374,14 @@ export default function ProductPageClient() {
           <div className="px-4 pt-3 pb-2">
             <div className="flex items-center justify-between">
               <button type="button" onClick={() => router.back()} className="text-[#0B6EA9] font-semibold text-sm">
-                ← Dib u noqo
+                {isEn ? "← Back" : "← Dib u noqo"}
               </button>
 
               <button
                 type="button"
                 onClick={onShare}
                 className="h-9 w-9 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center"
-                aria-label="Wadaag"
+                aria-label={isEn ? "Share" : "Wadaag"}
               >
                 <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 text-gray-700" aria-hidden="true">
                   <path
@@ -565,36 +397,43 @@ export default function ProductPageClient() {
 
             <div className="mt-2 flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-sm text-gray-600">Alaab</div>
+                <div className="text-sm text-gray-600">{isEn ? "Product" : "Alaab"}</div>
                 <div className="text-gray-900 font-extrabold text-lg leading-tight truncate">{title}</div>
               </div>
               {lowStock ? (
-                <div className="shrink-0 text-red-600 font-extrabold text-sm">Kaliya {Number(product.qty)} ayaa haray!</div>
+                <div className="shrink-0 text-red-600 font-extrabold text-sm">
+                  {isEn ? `Only ${Number(product.qty)} left!` : `Kaliya ${Number(product.qty)} ayaa haray!`}
+                </div>
               ) : null}
             </div>
           </div>
         </div>
 
-        {/* ✅ Joogto: haddii alaabtu ku jirto Cart */}
+        {/* ✅ Persistent: if in cart */}
         {isInCart && (
           <div className="px-4 pt-2">
             <div className="rounded-2xl border bg-white px-4 py-3 flex items-center gap-3">
-              <div className="h-8 w-8 rounded-full bg-[#E8F7ED] text-[#0E5C1C] grid place-items-center font-extrabold">
+              <div className="h-8 w-8 rounded-full bg-[#E6F4FF] text-[#0B6EA9] grid place-items-center font-extrabold">
                 ✓
               </div>
               <div className="min-w-0">
                 <div className="text-sm font-extrabold text-gray-900">
-                  {addedFlash ? addedMsg ?? "Waa lagu daray Cart" : "Ku jira Cart"}
+                  {addedFlash
+                    ? addedMsg ?? (isEn ? "Added to cart" : "Waa lagu daray Cart")
+                    : isEn
+                    ? "In cart"
+                    : "Ku jira Cart"}
                 </div>
                 <div className="text-[12px] text-gray-600 font-semibold truncate">
-                  Tirada ku jirta: {cfg.is_weight ? Number(inCartQty.toFixed(2)) : Math.round(inCartQty)}
+                  {isEn ? "In cart qty:" : "Tirada ku jirta:"}{" "}
+                  {cfg.is_weight ? Number(inCartQty.toFixed(2)) : Math.round(inCartQty)}
                 </div>
               </div>
               <Link
                 href="/cart"
                 className="ml-auto h-10 px-4 rounded-2xl bg-[#0B6EA9] text-white text-sm font-extrabold grid place-items-center"
               >
-                Eeg Cart
+                {isEn ? "View cart" : "Eeg Cart"}
               </Link>
             </div>
           </div>
@@ -604,7 +443,13 @@ export default function ProductPageClient() {
           <div className="px-4 pt-2">
             <div className="relative bg-gray-50 rounded-2xl border overflow-hidden">
               <div className="relative h-[250px] w-full">
-                <Image src={heroUrl} alt={String(title || "Sawirka alaabta")} fill className="object-contain p-4" priority />
+                <Image
+                  src={heroUrl}
+                  alt={String(title || (isEn ? "Product image" : "Sawirka alaabta"))}
+                  fill
+                  className="object-contain p-4"
+                  priority
+                />
               </div>
             </div>
 
@@ -622,7 +467,7 @@ export default function ProductPageClient() {
                         "relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border bg-white " +
                         (active ? "border-[#0B6EA9]" : "border-gray-200")
                       }
-                      aria-label={`Sawir ${idx + 1}`}
+                      aria-label={isEn ? `Image ${idx + 1}` : `Sawir ${idx + 1}`}
                     >
                       <Image src={url || "/example.png"} alt="" fill className="object-contain p-2" />
                     </button>
@@ -637,15 +482,13 @@ export default function ProductPageClient() {
             <div className="flex items-center gap-2">
               <div className="text-3xl font-extrabold text-gray-900">{money(lineTotal)}</div>
 
-              {discountPct >= 5 && (
-                <div className="h-7 px-2 rounded-full bg-[#E8F7ED] text-[#0E5C1C] text-[12px] font-extrabold grid place-items-center">
+              {showDiscount && (
+                <div className="h-7 px-2 rounded-full bg-[#E6F4FF] text-[#0B6EA9] text-[12px] font-extrabold grid place-items-center">
                   -{discountPct}%
                 </div>
               )}
 
-              {discountPct >= 5 && (
-                <div className="text-[12px] text-gray-400 font-bold line-through">{money(baseTotal)}</div>
-              )}
+              {showDiscount && <div className="text-[12px] text-gray-400 font-bold line-through">{money(baseTotal)}</div>}
             </div>
 
             <div className="mt-1 text-[12px] text-gray-600 font-semibold">
@@ -654,37 +497,37 @@ export default function ProductPageClient() {
 
             {bestBulk && (
               <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                <div className="text-[12px] font-extrabold text-gray-900">Qiimo jumlo</div>
+                <div className="text-[12px] font-extrabold text-gray-900">{isEn ? "Bulk price" : "Qiimo jumlo"}</div>
                 <div className="text-[12px] text-gray-700 font-semibold">
-                  {money(bestBulk.unit_price)} / {cfg.unit} laga bilaabo {bestBulk.min_qty}+ {cfg.unit}
-                  {bestBulk.max_qty != null ? ` (ugu badnaan ${bestBulk.max_qty} ${cfg.unit})` : ""}
+                  {money(bestBulk.unit_price)} / {cfg.unit} {isEn ? "from" : "laga bilaabo"} {bestBulk.min_qty}+ {cfg.unit}
+                  {bestBulk.max_qty != null ? (isEn ? ` (max ${bestBulk.max_qty} ${cfg.unit})` : ` (ugu badnaan ${bestBulk.max_qty} ${cfg.unit})`) : ""}
                 </div>
               </div>
             )}
           </div>
 
-          {(exactOptions.length > 0 || bulkOptions.length > 0) ? (
+          {exactOptions.length > 0 || bulkOptions.length > 0 ? (
             <div className="px-4 pb-2">
-              <div className="text-sm font-extrabold text-gray-900">Xulo ikhtiyaar</div>
+              <div className="text-sm font-extrabold text-gray-900">{isEn ? "Choose option" : "Xulo ikhtiyaar"}</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {exactOptions.map((o) => (
                   <button
                     key={o.id}
                     type="button"
-                    onClick={() => setQtyDraft(String(o.qty ?? cfg.min))}
+                    onClick={() => setQtyDraft(String((o as any).qty ?? cfg.min))}
                     className="h-9 px-3 rounded-xl border border-gray-200 bg-white text-[12px] font-extrabold text-gray-900 hover:border-gray-300"
                   >
-                    {o.label}
+                    {(o as any).label}
                   </button>
                 ))}
                 {bulkOptions.map((o) => (
                   <button
                     key={o.id}
                     type="button"
-                    onClick={() => setQtyDraft(String(o.min_qty ?? cfg.min))}
+                    onClick={() => setQtyDraft(String((o as any).min_qty ?? cfg.min))}
                     className="h-9 px-3 rounded-xl border border-gray-200 bg-white text-[12px] font-extrabold text-gray-900 hover:border-gray-300"
                   >
-                    {o.label}
+                    {(o as any).label}
                   </button>
                 ))}
               </div>
@@ -692,7 +535,7 @@ export default function ProductPageClient() {
           ) : null}
 
           <div className="px-4 pb-4">
-            <div className="text-sm font-extrabold text-gray-900">Tirada</div>
+            <div className="text-sm font-extrabold text-gray-900">{isEn ? "Quantity" : "Tirada"}</div>
             <div className="mt-2 flex items-center gap-2">
               <input
                 className="h-11 w-[160px] rounded-xl border border-gray-200 px-3 text-sm font-semibold text-gray-900"
@@ -706,78 +549,10 @@ export default function ProductPageClient() {
             </div>
           </div>
 
-          {fbw.length > 0 && (
-            <div className="px-4 pb-6">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-extrabold text-gray-900">Badanaa lala iibsado</div>
-                <div className="text-[11px] font-semibold text-gray-500">Isla qayb</div>
-              </div>
-
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                {fbw.map((rp) => {
-                  const rTitle = prettyTitleFromSlug(rp.slug) || rp.slug;
-                  const rImg = buildPublicImageUrl(rp.img);
-                  const rCfg = normalizeConfigLite(rp.online_config, rp);
-                  const rStartQty = normalizeQty(rCfg.min, rCfg.min, rCfg.step, !!rCfg.is_weight);
-                  const rUnitPrice = pickUnitPriceLite(rCfg, Number(rp.price ?? 0), rStartQty);
-
-                  return (
-                    <div key={rp.id} className="rounded-2xl border bg-white p-2">
-                      <Link href={`/product/${encodeURIComponent(slugify(rp.slug))}`} className="block">
-                        <div className="relative h-20 w-full bg-gray-50 rounded-xl overflow-hidden border">
-                          <Image src={rImg || "/example.png"} alt={rTitle} fill className="object-contain p-2" />
-                        </div>
-                        <div className="mt-2 text-[11px] font-extrabold text-gray-900 line-clamp-2 min-h-[32px]">
-                          {rTitle}
-                        </div>
-                        <div className="mt-1 text-[11px] font-extrabold text-gray-900">{money(rUnitPrice * rStartQty)}</div>
-                      </Link>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (typeof addItem === "function") {
-                            (addItem as any)(String(rp.id), null as any, rStartQty);
-                            triggerAddedFlash("Waa lagu daray Cart");
-                          }
-                        }}
-                        className="mt-2 w-full h-9 rounded-xl bg-[#0E5C1C] text-white text-[12px] font-extrabold active:scale-[0.99]"
-                      >
-                        Ku dar
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          <BoughtTogether fbw={fbw} addItem={addItem} triggerAddedFlash={triggerAddedFlash} />
         </div>
 
-        {/* ✅ Sticky Add-to-cart: kor ayaan u qaaday (si uusan u dul saarnayn BottomNav) */}
-        <div className="fixed inset-x-0 z-40" style={{ bottom: "calc(92px + env(safe-area-inset-bottom))" }}>
-          <div className="border-t bg-white">
-            <div className="mx-auto max-w-md px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-lg font-extrabold text-gray-900">{money(lineTotal)}</div>
-                  <div className="text-[11px] font-semibold text-gray-500">Wadar</div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={onAdd}
-                  className={
-                    "h-12 flex-1 max-w-[220px] rounded-2xl font-extrabold transition active:scale-[0.99] text-white " +
-                    (isInCart ? "bg-[#0E5C1C]" : addedFlash ? "bg-[#0E5C1C]" : "bg-[#0B6EA9]")
-                  }
-                >
-                  {isInCart ? "Ku jira Cart ✓" : addedFlash ? "Waa lagu daray ✓" : "Ku dar Cart"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
+        <StickyBar lineTotal={lineTotal} isInCart={isInCart} addedFlash={addedFlash} onAdd={onAdd} />
       </section>
     </main>
   );
