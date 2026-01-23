@@ -33,23 +33,21 @@ export default function TopNavbar() {
 
       <div className="mx-auto max-w-md px-3 pt-2 pb-2">
         {/* top row: brand + language */}
-        <div className="flex items-center justify-between gap-2">
+        <div className="relative flex h-14 items-end justify-between">
           <button
             type="button"
             onClick={() => router.push("/")}
-            className="group inline-flex items-center gap-2 rounded-full px-2 py-1 text-white/95"
+            className="inline-flex items-center"
             aria-label="Home"
           >
-            <span className="grid h-8 w-8 place-items-center rounded-full bg-white/15 ring-1 ring-white/25 backdrop-blur-sm">
-              🛒
-            </span>
-            <span className="leading-tight">
-              <div className="text-sm font-extrabold tracking-tight">MatoMart</div>
-              <div className="text-[11px] text-white/80">Dukaanka online</div>
-            </span>
+            <img
+              src="/logo.png"
+              alt="Mato"
+              className="h-14 w-auto object-contain"
+            />
           </button>
 
-          <div className="flex items-center rounded-full bg-white/15 p-1 ring-1 ring-white/25 backdrop-blur-sm">
+          <div className="absolute right-0 flex items-center rounded-full bg-white/15 p-1 ring-1 ring-white/25 backdrop-blur-sm">
             <button
               type="button"
               onClick={() => {
@@ -84,7 +82,7 @@ window.dispatchEvent(new Event("matomart_lang_change"));
         </div>
 
         {/* search row */}
-        <div className="mt-2 flex items-center gap-2">
+        <div className="flex items-center gap-2">
           {showBack ? (
             <button
               type="button"

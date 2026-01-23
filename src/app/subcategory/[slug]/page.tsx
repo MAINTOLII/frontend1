@@ -49,11 +49,9 @@ type OnlineOptionLite = {
   type: "exact" | "bulk";
   label: string;
   unit_price: number;
-  // exact
-  qty?: number | null;
-  // bulk
-  min_qty?: number | null;
-  max_qty?: number | null;
+  qty?: number | null; // exact
+  min_qty?: number | null; // bulk
+  max_qty?: number | null; // bulk
 };
 
 type OnlineConfigLite = {
@@ -153,12 +151,6 @@ function getLabel(obj: any, lang: "so" | "en") {
   return lang === "en" ? en : so;
 }
 
-function getSecondary(obj: any, lang: "so" | "en") {
-  const so = obj?.name_so ?? obj?.name ?? obj?.slug ?? "";
-  const en = obj?.name_en ?? obj?.name ?? obj?.slug ?? "";
-  return lang === "en" ? so : en;
-}
-
 function prettyTitleFromSlug(input: any) {
   let s = String(input ?? "").trim();
   if (!s) return "";
@@ -210,12 +202,12 @@ function AllIcon({ active }: { active: boolean }) {
   return (
     <div
       className={`relative h-12 w-12 rounded-full grid place-items-center border transition-all ${
-        active ? "bg-[#0E5C1C] border-[#0E5C1C]" : "bg-white border-gray-200"
+        active ? "bg-[#0B6EA9] border-[#0B6EA9]" : "bg-white border-gray-200"
       }`}
     >
       <div className="grid grid-cols-2 gap-1">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className={`h-2.5 w-2.5 rounded-full ${active ? "bg-white" : "bg-[#0E5C1C]"}`} />
+          <div key={i} className={`h-2.5 w-2.5 rounded-full ${active ? "bg-white" : "bg-[#0B6EA9]"}`} />
         ))}
       </div>
     </div>
@@ -237,6 +229,27 @@ export default function SubcategoryPage() {
   const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
 
   const paneRef = useRef<HTMLDivElement | null>(null);
+
+  // LEFT RAIL scroll controls
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const [railAtTop, setRailAtTop] = useState(true);
+  const [railAtBottom, setRailAtBottom] = useState(false);
+
+  const updateRailEdges = () => {
+    const el = railRef.current;
+    if (!el) return;
+    const atTop = el.scrollTop <= 1;
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+    setRailAtTop(atTop);
+    setRailAtBottom(atBottom);
+  };
+
+  const railScrollBy = (dir: "up" | "down") => {
+    const el = railRef.current;
+    if (!el) return;
+    const amount = Math.max(160, Math.floor(el.clientHeight * 0.65));
+    el.scrollBy({ top: dir === "up" ? -amount : amount, behavior: "smooth" });
+  };
 
   useEffect(() => {
     let alive = true;
@@ -296,6 +309,10 @@ export default function SubcategoryPage() {
           try {
             paneRef.current?.scrollTo({ top: 0 });
           } catch {}
+          try {
+            railRef.current?.scrollTo({ top: 0 });
+          } catch {}
+          updateRailEdges();
         });
       } catch (e: any) {
         console.error("SUBCATEGORY LOAD ERROR", e?.message ?? e, e?.details ?? "", e);
@@ -367,13 +384,13 @@ export default function SubcategoryPage() {
 
   const activeObj = activeSS ? ssList.find((x: any) => x.slug === activeSS) : null;
 
+  // ONE language only
   const titlePrimary = activeObj ? getLabel(activeObj, lang) : getLabel(currentSub, lang);
-  const titleSecondary = activeObj ? getSecondary(activeObj, lang) : getSecondary(currentSub, lang);
 
   const seoLine =
     lang === "so"
-      ? `Ka hel ${titlePrimary} (${titleSecondary}) online MatoMart – raashin iyo alaabooyin tayo leh oo lagu keeno gudaha Soomaaliya.`
-      : `Shop ${titleSecondary} (${titlePrimary}) online in Somalia with MatoMart – quality groceries and essentials delivered fast.`;
+      ? `Ka hel ${titlePrimary} online MatoMart – raashin iyo alaabooyin tayo leh oo lagu keeno gudaha Soomaaliya.`
+      : `Shop ${titlePrimary} online in Somalia with MatoMart – quality groceries and essentials delivered fast.`;
 
   /** ===== Cart totals ===== */
   const cartTotals = useMemo(() => {
@@ -485,7 +502,7 @@ export default function SubcategoryPage() {
             onClick={addNow}
             disabled={outOfStock}
             className={`w-full h-10 rounded-2xl text-[13px] font-extrabold active:scale-[0.99] transition shadow-sm ${
-              outOfStock ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-[#0E5C1C] text-white"
+              outOfStock ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-[#0B6EA9] text-white"
             }`}
           >
             {outOfStock
@@ -496,8 +513,6 @@ export default function SubcategoryPage() {
               ? "Add to cart"
               : "Ku dar gaadhiga"}
           </button>
-
-
         </div>
       );
     }
@@ -518,7 +533,6 @@ export default function SubcategoryPage() {
           <div className="w-full h-10 rounded-2xl border border-gray-200 bg-white text-[13px] font-extrabold text-gray-900 grid place-items-center">
             {fmtQty(inCartQty, cfg.unit, cfg.is_weight)}
           </div>
-
         </div>
 
         <button
@@ -538,25 +552,21 @@ export default function SubcategoryPage() {
   return (
     <>
       {jsonLdString && (
-        <script
-          type="application/ld+json"
-          suppressHydrationWarning
-          dangerouslySetInnerHTML={{ __html: jsonLdString }}
-        />
+        <script type="application/ld+json" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: jsonLdString }} />
       )}
 
-<main className="min-h-screen bg-[#F5FAFF] pb-0 overflow-hidden">        <div className="bg-white border-b">
+      <main className="min-h-screen bg-[#F5FAFF] pb-0 overflow-hidden">
+        <div className="bg-white border-b">
           <div className="mx-auto max-w-md px-4 py-3">
             <SearchBar />
           </div>
         </div>
 
-        {/* TITLE */}
+        {/* TITLE (single language) */}
         <section className="bg-white border-b">
           <div className="mx-auto max-w-md px-4 py-2 flex items-center justify-between">
             <div className="leading-tight">
-              <div className="text-[13px] font-semibold text-gray-900">{loading ? "..." : titlePrimary}</div>
-              <div className="text-[10px] text-gray-500">{loading ? "" : titleSecondary}</div>
+              <div className="text-[15px] font-extrabold tracking-tight text-gray-900">{loading ? "..." : titlePrimary}</div>
             </div>
             <div className="w-8" />
           </div>
@@ -564,12 +574,12 @@ export default function SubcategoryPage() {
 
         {/* MAIN */}
         <section
-          className={`mx-auto max-w-md grid ${hasRail ? "grid-cols-[82px_1fr]" : "grid-cols-1"}`}
+          className={`mx-auto max-w-md grid ${hasRail ? "grid-cols-[150px_1fr]" : "grid-cols-1"}`}
           style={{ height: "calc(100vh - 128px)" }}
         >
           {/* LEFT RAIL */}
           {hasRail && (
-            <aside className="bg-white border-r px-2 py-2">
+            <aside className="bg-white border-r px-2 py-2 flex flex-col relative">
               <button
                 type="button"
                 onClick={() => {
@@ -577,17 +587,27 @@ export default function SubcategoryPage() {
                   try {
                     paneRef.current?.scrollTo({ top: 0, behavior: "smooth" });
                   } catch {}
+                  try {
+                    railRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                  } catch {}
+                  updateRailEdges();
                 }}
-                className="w-full flex flex-col items-center justify-center rounded-2xl px-2 py-2"
+                className={`w-full flex flex-col items-center justify-center px-2 py-2 rounded-2xl transition ${
+                  activeSS === null ? "bg-[#E6F4FF]" : "bg-white"
+                }`}
               >
                 <AllIcon active={activeSS === null} />
                 <div
-className={`mt-1 text-[10px] font-extrabold ${activeSS === null ? "text-[#0B6EA9]" : "text-gray-800"}`}                >
-                  ALL
+                  className={`mt-1 text-[12px] font-extrabold tracking-tight ${
+                    activeSS === null ? "text-[#0B6EA9]" : "text-gray-900"
+                  }`}
+                >
+                  {lang === "en" ? "All" : "Dhammaan"}
                 </div>
               </button>
 
-              <div className="mt-2 space-y-2">
+              {/* SCROLLABLE LIST */}
+              <div ref={railRef} onScroll={updateRailEdges} className="mt-2 flex-1 overflow-y-auto space-y-2 pr-1">
                 {ssList.map((ss: any) => {
                   const isActive = activeSS === ss.slug;
                   const primary = getLabel(ss, lang);
@@ -603,30 +623,71 @@ className={`mt-1 text-[10px] font-extrabold ${activeSS === null ? "text-[#0B6EA9
                           paneRef.current?.scrollTo({ top: 0, behavior: "smooth" });
                         } catch {}
                       }}
-                      className={`w-full flex flex-col items-center rounded-2xl px-1.5 py-2 border transition ${
-                        isActive ? "bg-[#0E5C1C] border-[#0E5C1C]" : "bg-white border-gray-200"
+                      className={`w-full flex flex-col items-center justify-center px-2 py-3 rounded-2xl transition ${
+                        isActive ? "bg-[#E6F4FF]" : "bg-white"
                       }`}
                     >
-                      <div className="w-14 h-14 rounded-2xl overflow-hidden relative bg-white">
+                      {/* NO BG / NO BORDER */}
+                      <div className="w-full h-16 overflow-hidden relative">
                         {img ? (
-                          <Image src={img} alt={primary} fill className="object-contain p-2" />
+                          <Image src={img} alt={primary} fill className="object-contain" />
                         ) : (
                           <div className="w-full h-full grid place-items-center text-[10px] text-gray-400">
                             {lang === "en" ? "No image" : "Sawir ma jiro"}
                           </div>
                         )}
                       </div>
-                      <div
-                        className={`mt-1 text-[10px] text-center leading-tight font-extrabold ${
-                          isActive ? "text-white" : "text-gray-800"
-                        }`}
-                      >
-                        {primary}
+
+                      {/* ONE language only */}
+                      <div className="mt-2 text-center leading-tight">
+                        <div
+                          className={`text-[12px] font-extrabold tracking-tight ${
+                            isActive ? "text-[#0B6EA9]" : "text-gray-900"
+                          }`}
+                        >
+                          {primary}
+                        </div>
                       </div>
                     </button>
                   );
                 })}
               </div>
+
+              {/* UP ARROW: only when NOT at top */}
+              {!railAtTop && (
+                <button
+                  type="button"
+                  onClick={() => railScrollBy("up")}
+                  aria-label="Scroll up"
+                  className="absolute top-2 left-1/2 -translate-x-1/2 h-9 w-9 rounded-full bg-white/90 border border-gray-200 shadow grid place-items-center active:scale-[0.98]"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-gray-800">
+                    <path
+                      fillRule="evenodd"
+                      d="M10 5.293l5.354 5.353a1 1 0 11-1.414 1.414L10 8.121l-3.94 3.94a1 1 0 11-1.414-1.414L10 5.293z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </button>
+              )}
+
+              {/* DOWN ARROW: hide when at bottom */}
+              {!railAtBottom && (
+                <button
+                  type="button"
+                  onClick={() => railScrollBy("down")}
+                  aria-label="Scroll down"
+                  className="absolute bottom-2 left-1/2 -translate-x-1/2 h-9 w-9 rounded-full bg-white/90 border border-gray-200 shadow grid place-items-center active:scale-[0.98]"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-gray-800">
+                    <path
+                      fillRule="evenodd"
+                      d="M10 14.707l-5.354-5.353a1 1 0 011.414-1.414L10 11.879l3.94-3.94a1 1 0 011.414 1.414L10 14.707z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </button>
+              )}
             </aside>
           )}
 
@@ -665,7 +726,7 @@ className={`mt-1 text-[10px] font-extrabold ${activeSS === null ? "text-[#0B6EA9
                       <div key={pid} className="rounded-2xl overflow-hidden border bg-white border-gray-200">
                         <div className="relative px-3 pt-3">
                           {justAddedId === pid ? (
-                            <div className="absolute left-2 top-2 text-[10px] px-2 py-1 rounded-full bg-[#0E5C1C] text-white font-extrabold shadow">
+                            <div className="absolute left-2 top-2 text-[10px] px-2 py-1 rounded-full bg-[#0B6EA9] text-white font-extrabold shadow">
                               {lang === "en" ? "Added" : "Waa la daray"} ✓
                             </div>
                           ) : null}
@@ -700,7 +761,7 @@ className={`mt-1 text-[10px] font-extrabold ${activeSS === null ? "text-[#0B6EA9
                                   {money(lineTotal)}
                                 </div>
                                 {off >= 5 ? (
-                                  <div className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#E8F7ED] text-[#0E5C1C]">
+                                  <div className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#E6F4FF] text-[#0B6EA9]">
                                     -{off}%
                                   </div>
                                 ) : null}
