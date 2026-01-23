@@ -1,189 +1,34 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
-import SearchBar from "@/components/SearchBar";
-
+import LeftRail from "./components/LeftRail";
+import StickyCartBar from "./components/StickyCartBar";
 import { useCart } from "@/context/CartContext";
 import { useLanguage } from "@/context/LanguageContext";
-
+import TopNavbar from "@/components/TopNavbar";
 import {
   fetchSubcategoryBySlug,
   fetchSubSubcategoriesBySubcategoryId,
   fetchProductsBySubcategoryId,
   safeImg,
 } from "@/lib/db";
-
+import ProductGrid from "./components/ProductGrid";
+import ProductAdd from "./components/ProductAdd";
+import {
+  money,
+  parseNum,
+  normalizeQty,
+  normalizeConfigLite,
+  pickUnitPriceLite,
+  fmtQty,
+  getLabel,
+  prettyTitleFromSlug,
+  pctOff,
+  type OnlineConfigLite,
+  type OnlineOptionLite,
+} from "./helpers";
 /** ===== helpers ===== */
-function money(n: number) {
-  return `$${Number(n ?? 0).toFixed(2)}`;
-}
-
-function parseNum(v: unknown): number {
-  const s = String(v ?? "").trim().replace(",", ".");
-  const n = Number(s);
-  return Number.isFinite(n) ? n : NaN;
-}
-
-function roundToStep(value: number, step: number) {
-  if (!Number.isFinite(value)) return 0;
-  if (!Number.isFinite(step) || step <= 0) return value;
-  const inv = 1 / step;
-  return Math.round(value * inv) / inv;
-}
-
-function normalizeQty(value: number, min: number, step: number, isWeight: boolean) {
-  const safeMin = Number.isFinite(min) && min > 0 ? min : isWeight ? 0.5 : 1;
-  const safeStep = Number.isFinite(step) && step > 0 ? step : isWeight ? 0.5 : 1;
-  const v = Number.isFinite(value) ? value : safeMin;
-  const clamped = v < safeMin ? safeMin : v;
-  const stepped = isWeight ? roundToStep(clamped, safeStep) : Math.round(clamped / safeStep) * safeStep;
-  const out = Math.max(safeMin, stepped);
-  return Number(out.toFixed(isWeight ? 3 : 0));
-}
-
-type OnlineOptionLite = {
-  id: string;
-  type: "exact" | "bulk";
-  label: string;
-  unit_price: number;
-  qty?: number | null; // exact
-  min_qty?: number | null; // bulk
-  max_qty?: number | null; // bulk
-};
-
-type OnlineConfigLite = {
-  unit: string;
-  is_weight: boolean;
-  min: number;
-  step: number;
-  options: OnlineOptionLite[];
-};
-
-function defaultRulesFor(p: any) {
-  const isW = !!p?.is_weight;
-  return {
-    unit: isW ? "kg" : "pcs",
-    min: Number(p?.min_order_qty ?? (isW ? 0.5 : 1)) || (isW ? 0.5 : 1),
-    step: Number(p?.qty_step ?? (isW ? 0.5 : 1)) || (isW ? 0.5 : 1),
-    is_weight: isW,
-  };
-}
-
-function normalizeConfigLite(raw: any, p: any): OnlineConfigLite {
-  const base = defaultRulesFor(p);
-  const unit = String(raw?.unit || base.unit);
-  const is_weight = !!(raw?.is_weight ?? base.is_weight);
-
-  const minRaw = parseNum(raw?.min);
-  const stepRaw = parseNum(raw?.step);
-
-  const min = Number.isFinite(minRaw) && minRaw > 0 ? minRaw : base.min;
-  const step = Number.isFinite(stepRaw) && stepRaw > 0 ? stepRaw : base.step;
-
-  const optsRaw = Array.isArray(raw?.options) ? raw.options : [];
-  const options: OnlineOptionLite[] = optsRaw
-    .map((o: any) => {
-      const type = o?.type;
-      const label = String(o?.label ?? "").trim();
-      if ((type !== "exact" && type !== "bulk") || !label) return null;
-
-      const up = parseNum(o?.unit_price);
-      if (!Number.isFinite(up) || up < 0) return null;
-
-      if (type === "exact") {
-        const q = parseNum(o?.qty);
-        if (!Number.isFinite(q) || q <= 0) return null;
-        return { id: String(o?.id || `${label}_${q}`), type: "exact", label, qty: q, unit_price: up };
-      }
-
-      const minq = parseNum(o?.min_qty);
-      const maxq = o?.max_qty == null || String(o?.max_qty).trim() === "" ? null : parseNum(o?.max_qty);
-
-      if (!Number.isFinite(minq) || minq < 0) return null;
-      if (maxq != null && (!Number.isFinite(maxq) || maxq < minq)) return null;
-
-      return {
-        id: String(o?.id || `${label}_${minq}`),
-        type: "bulk",
-        label,
-        min_qty: minq,
-        max_qty: maxq ?? null,
-        unit_price: up,
-      };
-    })
-    .filter(Boolean) as OnlineOptionLite[];
-
-  const exact = options.filter((o) => o.type === "exact").sort((a, b) => Number(a.qty ?? 0) - Number(b.qty ?? 0));
-  const bulk = options.filter((o) => o.type === "bulk").sort((a, b) => Number(a.min_qty ?? 0) - Number(b.min_qty ?? 0));
-
-  return { unit, is_weight, min, step, options: [...exact, ...bulk] };
-}
-
-function pickUnitPriceLite(cfg: OnlineConfigLite, basePrice: number, qty: number): number {
-  const q2 = Number(qty.toFixed(3));
-
-  const exact = cfg.options.find(
-    (o: any) => o.type === "exact" && Number(((o as any).qty ?? 0).toFixed(3)) === q2
-  ) as any;
-  if (exact) return Number(exact.unit_price) || 0;
-
-  const bulk = (cfg.options as any[])
-    .filter((o) => o.type === "bulk" && Number(o.min_qty ?? 0) <= qty && (o.max_qty == null || qty <= Number(o.max_qty)))
-    .sort((a, b) => Number(b.min_qty ?? 0) - Number(a.min_qty ?? 0))[0];
-
-  if (bulk) return Number(bulk.unit_price) || 0;
-
-  return Number(basePrice) || 0;
-}
-
-function fmtQty(qty: number, unit: string, isWeight: boolean) {
-  if (!isWeight) return `${Math.round(qty)} ${unit}`;
-  if (qty > 0 && qty < 1) return `${Math.round(qty * 1000)} g`;
-  return `${Number(qty.toFixed(2))} ${unit}`;
-}
-
-function getLabel(obj: any, lang: "so" | "en") {
-  const so = obj?.name_so ?? obj?.name ?? obj?.slug ?? "";
-  const en = obj?.name_en ?? obj?.name ?? obj?.slug ?? "";
-  return lang === "en" ? en : so;
-}
-
-function prettyTitleFromSlug(input: any) {
-  let s = String(input ?? "").trim();
-  if (!s) return "";
-
-  try {
-    s = decodeURIComponent(s);
-  } catch {}
-
-  if (s.includes("/")) {
-    const last = s.split("/").filter(Boolean).pop();
-    if (last) s = last;
-  }
-
-  s = s.replace(/[_+]/g, " ").replace(/-+/g, " ");
-  s = s.replace(/\s+/g, " ").trim();
-
-  s = s
-    .split(" ")
-    .map((w) => {
-      if (!w) return "";
-      if (/^\d/.test(w)) return w;
-      return w.charAt(0).toUpperCase() + w.slice(1);
-    })
-    .join(" ");
-
-  return s;
-}
-
-function pctOff(oldTotal: number, newTotal: number) {
-  if (!(oldTotal > 0) || !(newTotal >= 0)) return 0;
-  const p = Math.round(((oldTotal - newTotal) / oldTotal) * 100);
-  return Number.isFinite(p) ? Math.max(0, p) : 0;
-}
 
 function BulkHint({ cfg }: { cfg: OnlineConfigLite }) {
   const bulk = cfg.options.filter((o) => o.type === "bulk") as OnlineOptionLite[];
@@ -198,26 +43,10 @@ function BulkHint({ cfg }: { cfg: OnlineConfigLite }) {
   );
 }
 
-function AllIcon({ active }: { active: boolean }) {
-  return (
-    <div
-      className={`relative h-12 w-12 rounded-full grid place-items-center border transition-all ${
-        active ? "bg-[#0B6EA9] border-[#0B6EA9]" : "bg-white border-gray-200"
-      }`}
-    >
-      <div className="grid grid-cols-2 gap-1">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} className={`h-2.5 w-2.5 rounded-full ${active ? "bg-white" : "bg-[#0B6EA9]"}`} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /** ===== page ===== */
 export default function SubcategoryPage() {
   const { slug } = useParams<{ slug: string }>();
-  const { items, addItem, setQty } = useCart();
+  const { items } = useCart();
   const { lang } = useLanguage();
 
   const [loading, setLoading] = useState(true);
@@ -229,27 +58,6 @@ export default function SubcategoryPage() {
   const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
 
   const paneRef = useRef<HTMLDivElement | null>(null);
-
-  // LEFT RAIL scroll controls
-  const railRef = useRef<HTMLDivElement | null>(null);
-  const [railAtTop, setRailAtTop] = useState(true);
-  const [railAtBottom, setRailAtBottom] = useState(false);
-
-  const updateRailEdges = () => {
-    const el = railRef.current;
-    if (!el) return;
-    const atTop = el.scrollTop <= 1;
-    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-    setRailAtTop(atTop);
-    setRailAtBottom(atBottom);
-  };
-
-  const railScrollBy = (dir: "up" | "down") => {
-    const el = railRef.current;
-    if (!el) return;
-    const amount = Math.max(160, Math.floor(el.clientHeight * 0.65));
-    el.scrollBy({ top: dir === "up" ? -amount : amount, behavior: "smooth" });
-  };
 
   useEffect(() => {
     let alive = true;
@@ -309,10 +117,6 @@ export default function SubcategoryPage() {
           try {
             paneRef.current?.scrollTo({ top: 0 });
           } catch {}
-          try {
-            railRef.current?.scrollTo({ top: 0 });
-          } catch {}
-          updateRailEdges();
         });
       } catch (e: any) {
         console.error("SUBCATEGORY LOAD ERROR", e?.message ?? e, e?.details ?? "", e);
@@ -456,96 +260,9 @@ export default function SubcategoryPage() {
     return <main className="min-h-screen bg-white p-6 text-black">Subcategory not found.</main>;
   }
 
-  /** ===== NEW ProductAdd UX ===== */
-  function ProductAdd({ p }: { p: any }) {
-    const productId = String(p?.id);
-    const item = (items ?? []).find((i: any) => String(i.productId) === productId);
-    const inCartQty = Number(item?.qty ?? 0);
-
-    const cfg = normalizeConfigLite(p?.online_config, p);
-
-    // Stock from products table
-    const stock = Number(p?.qty ?? 0);
-    const outOfStock = !Number.isFinite(stock) || stock <= 0;
-
-    const addNow = () => {
-      const startQty = normalizeQty(cfg.min, cfg.min, cfg.step, cfg.is_weight);
-      (addItem as any)(productId, null as any, startQty);
-      setJustAddedId(productId);
-      setQtyDraft((prev) => ({ ...prev, [productId]: String(startQty) }));
-    };
-
-    const minus = () => {
-      const nextRaw = inCartQty - cfg.step;
-      if (nextRaw <= 0) {
-        (setQty as any)(productId, null as any, 0);
-        setQtyDraft((prev) => ({ ...prev, [productId]: String(cfg.min) }));
-        return;
-      }
-      const next = normalizeQty(nextRaw, cfg.min, cfg.step, cfg.is_weight);
-      (setQty as any)(productId, null as any, next);
-      setQtyDraft((prev) => ({ ...prev, [productId]: String(next) }));
-    };
-
-    const plus = () => {
-      const next = normalizeQty(inCartQty + cfg.step, cfg.min, cfg.step, cfg.is_weight);
-      (setQty as any)(productId, null as any, next);
-      setQtyDraft((prev) => ({ ...prev, [productId]: String(next) }));
-    };
-
-    // Not in cart -> single Add button
-    if (!item) {
-      return (
-        <div className="mt-2">
-          <button
-            type="button"
-            onClick={addNow}
-            disabled={outOfStock}
-            className={`w-full h-10 rounded-2xl text-[13px] font-extrabold active:scale-[0.99] transition shadow-sm ${
-              outOfStock ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-[#0B6EA9] text-white"
-            }`}
-          >
-            {outOfStock
-              ? lang === "en"
-                ? "Out of stock"
-                : "Waa ka dhammaatay"
-              : lang === "en"
-              ? "Add to cart"
-              : "Ku dar gaadhiga"}
-          </button>
-        </div>
-      );
-    }
-
-    // In cart -> - qty +
-    return (
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={minus}
-          className="w-10 h-10 rounded-full bg-[#0B6EA9] text-white text-xl font-extrabold grid place-items-center active:scale-[0.99]"
-          aria-label="decrease"
-        >
-          −
-        </button>
-
-        <div className="flex-1">
-          <div className="w-full h-10 rounded-2xl border border-gray-200 bg-white text-[13px] font-extrabold text-gray-900 grid place-items-center">
-            {fmtQty(inCartQty, cfg.unit, cfg.is_weight)}
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={plus}
-          className="w-10 h-10 rounded-full bg-[#0B6EA9] text-white text-xl font-extrabold grid place-items-center active:scale-[0.99]"
-          aria-label="increase"
-        >
-          +
-        </button>
-      </div>
-    );
-  }
+  const ProductAddBound = ({ p }: { p: any }) => (
+    <ProductAdd p={p} setJustAddedId={setJustAddedId} setQtyDraft={setQtyDraft} />
+  );
 
   const hasRail = ssList.length > 0;
 
@@ -555,12 +272,7 @@ export default function SubcategoryPage() {
         <script type="application/ld+json" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: jsonLdString }} />
       )}
 
-      <main className="min-h-screen bg-[#F5FAFF] pb-0 overflow-hidden">
-        <div className="bg-white border-b">
-          <div className="mx-auto max-w-md px-4 py-3">
-            <SearchBar />
-          </div>
-        </div>
+<main className="h-screen bg-[#F5FAFF] pb-0 overflow-hidden flex flex-col"><TopNavbar />
 
         {/* TITLE (single language) */}
         <section className="bg-white border-b">
@@ -573,271 +285,46 @@ export default function SubcategoryPage() {
         </section>
 
         {/* MAIN */}
-        <section
-          className={`mx-auto max-w-md grid ${hasRail ? "grid-cols-[130px_1fr]" : "grid-cols-1"}`}
-          style={{ height: "calc(100vh - 128px)" }}
-        >
+<section
+  className={`mx-auto max-w-md grid flex-1 min-h-0 ${hasRail ? "grid-cols-[130px_1fr]" : "grid-cols-1"}`}
+>
           {/* LEFT RAIL */}
-          {hasRail && (
-            <aside className="bg-white border-r px-2 py-2 flex flex-col relative">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveSS(null);
-                  try {
-                    paneRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-                  } catch {}
-                  try {
-                    railRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-                  } catch {}
-                  updateRailEdges();
-                }}
-                className={`w-full flex flex-col items-center justify-center px-2 py-2 rounded-2xl transition ${
-                  activeSS === null ? "bg-[#E6F4FF]" : "bg-white"
-                }`}
-              >
-                <AllIcon active={activeSS === null} />
-                <div
-                  className={`mt-1 text-[12px] font-extrabold tracking-tight ${
-                    activeSS === null ? "text-[#0B6EA9]" : "text-gray-900"
-                  }`}
-                >
-                  {lang === "en" ? "All" : "Dhammaan"}
-                </div>
-              </button>
-
-              {/* SCROLLABLE LIST */}
-              <div ref={railRef} onScroll={updateRailEdges} className="mt-2 flex-1 overflow-y-auto space-y-2 pr-1">
-                {ssList.map((ss: any) => {
-                  const isActive = activeSS === ss.slug;
-                  const primary = getLabel(ss, lang);
-                  const img = safeImg(ss.img);
-
-                  return (
-                    <button
-                      key={ss.id}
-                      type="button"
-                      onClick={() => {
-                        setActiveSS(ss.slug);
-                        try {
-                          paneRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-                        } catch {}
-                      }}
-                      className={`w-full flex flex-col items-center justify-center px-2 py-3 rounded-2xl transition ${
-                        isActive ? "bg-[#E6F4FF]" : "bg-white"
-                      }`}
-                    >
-                      {/* NO BG / NO BORDER */}
-                      <div className="w-full h-16 overflow-hidden relative">
-                        {img ? (
-                          <Image src={img} alt={primary} fill className="object-contain" />
-                        ) : (
-                          <div className="w-full h-full grid place-items-center text-[10px] text-gray-400">
-                            {lang === "en" ? "No image" : "Sawir ma jiro"}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* ONE language only */}
-                      <div className="mt-2 text-center leading-tight">
-                        <div
-                          className={`text-[12px] font-extrabold tracking-tight ${
-                            isActive ? "text-[#0B6EA9]" : "text-gray-900"
-                          }`}
-                        >
-                          {primary}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* UP ARROW: only when NOT at top */}
-              {!railAtTop && (
-                <button
-                  type="button"
-                  onClick={() => railScrollBy("up")}
-                  aria-label="Scroll up"
-                  className="absolute top-2 left-1/2 -translate-x-1/2 h-9 w-9 rounded-full bg-white/90 border border-gray-200 shadow grid place-items-center active:scale-[0.98]"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-gray-800">
-                    <path
-                      fillRule="evenodd"
-                      d="M10 5.293l5.354 5.353a1 1 0 11-1.414 1.414L10 8.121l-3.94 3.94a1 1 0 11-1.414-1.414L10 5.293z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-              )}
-
-              {/* DOWN ARROW: hide when at bottom */}
-              {!railAtBottom && (
-                <button
-                  type="button"
-                  onClick={() => railScrollBy("down")}
-                  aria-label="Scroll down"
-                  className="absolute bottom-2 left-1/2 -translate-x-1/2 h-9 w-9 rounded-full bg-white/90 border border-gray-200 shadow grid place-items-center active:scale-[0.98]"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-gray-800">
-                    <path
-                      fillRule="evenodd"
-                      d="M10 14.707l-5.354-5.353a1 1 0 011.414-1.414L10 11.879l3.94-3.94a1 1 0 011.414 1.414L10 14.707z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-              )}
-            </aside>
-          )}
+{hasRail && (
+  <LeftRail
+    ssList={ssList}
+    activeSS={activeSS}
+    setActiveSS={setActiveSS}
+    lang={lang}
+    paneRef={paneRef}
+  />
+)}
 
           {/* RIGHT GRID (scrollable) */}
-          <div ref={paneRef} className="overflow-y-auto p-3 pb-36">
-            <div className="grid grid-cols-2 gap-2">
-              {loading ? (
-                <div className="col-span-2 bg-white rounded-2xl border p-4 text-sm text-gray-600">Loading...</div>
-              ) : (
-                <>
-                  {filtered.map((p: any) => {
-                    const pid = String(p.id);
-                    const rawSlug = String(p.slug ?? "");
-                    const name = prettyTitleFromSlug(rawSlug) || rawSlug;
-                    const basePrice = getProductPrice(p);
-                    const imgUrl = getProductImageUrl(p);
-
-                    const cfg = normalizeConfigLite(p?.online_config, p);
-                    const rawDraft = qtyDraft[pid] ?? String(cfg.min);
-                    const draftNum = parseNum(rawDraft);
-                    const draftQty = normalizeQty(
-                      Number.isFinite(draftNum) ? draftNum : cfg.min,
-                      cfg.min,
-                      cfg.step,
-                      cfg.is_weight
-                    );
-
-                    const unitPrice = pickUnitPriceLite(cfg, basePrice, draftQty);
-                    const lineTotal = unitPrice * draftQty;
-                    const baseTotal = Number(basePrice) * draftQty;
-                    const off = pctOff(baseTotal, lineTotal);
-
-                    const hasTiers = (cfg.options?.length ?? 0) > 0;
-
-                    return (
-                      <div key={pid} className="rounded-2xl overflow-hidden border bg-white border-gray-200">
-                        <div className="relative px-3 pt-3">
-                          {justAddedId === pid ? (
-                            <div className="absolute left-2 top-2 text-[10px] px-2 py-1 rounded-full bg-[#0B6EA9] text-white font-extrabold shadow">
-                              {lang === "en" ? "Added" : "Waa la daray"} ✓
-                            </div>
-                          ) : null}
-
-                          <Link href={`/product/${encodeURIComponent(rawSlug)}`} className="block">
-                            {imgUrl ? (
-                              <Image
-                                src={imgUrl}
-                                alt={name || "Product"}
-                                width={220}
-                                height={220}
-                                className="mx-auto h-24 object-contain w-full"
-                              />
-                            ) : (
-                              <div className="mx-auto h-24 w-full grid place-items-center text-[11px] text-gray-400">
-                                {lang === "en" ? "No image" : "Sawir ma jiro"}
-                              </div>
-                            )}
-                          </Link>
-                        </div>
-
-                        <div className="px-3 pb-3">
-                          <div className="text-[12px] font-extrabold text-gray-900 line-clamp-2 min-h-[30px]">
-                            {name || "—"}
-                          </div>
-
-                          {/* Pricing */}
-                          <div className="mt-1 flex items-end justify-between gap-2">
-                            <div>
-                              <div className="flex items-baseline gap-2">
-                                <div className="text-[16px] font-extrabold text-gray-900 leading-none">
-                                  {money(lineTotal)}
-                                </div>
-                                {off >= 5 ? (
-                                  <div className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#E6F4FF] text-[#0B6EA9]">
-                                    -{off}%
-                                  </div>
-                                ) : null}
-                              </div>
-
-                              <div className="mt-0.5 text-[10px] text-gray-600 font-semibold">
-                                {money(unitPrice)} / {cfg.unit} • {fmtQty(draftQty, cfg.unit, cfg.is_weight)}
-                              </div>
-
-                              {hasTiers ? <BulkHint cfg={cfg} /> : null}
-                            </div>
-
-                            {off >= 5 ? (
-                              <div className="text-right">
-                                <div className="text-[10px] text-gray-400 line-through font-bold">{money(baseTotal)}</div>
-                              </div>
-                            ) : null}
-                          </div>
-
-                          <div className="mt-2">
-                            <ProductAdd p={p} />
-                          </div>
-
-                          {/* Out of stock at bottom */}
-                          {Number(p?.qty ?? 0) <= 0 && (
-                            <div className="mt-2 pt-2 border-t border-gray-100 text-[11px] font-extrabold text-red-600">
-                              {lang === "en" ? "Out of stock" : "Waa ka dhammaatay"}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {filtered.length === 0 && (
-                    <div className="col-span-2 bg-white rounded-2xl border p-4 text-sm text-gray-600">
-                      {lang === "en" ? "No products found in this section." : "Alaab lagama helin qaybtaan."}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* SEO at bottom */}
-            {!loading && (
-              <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-3 text-[10px] text-gray-500 leading-snug">
-                {seoLine}
-              </div>
-            )}
-          </div>
+         <ProductGrid
+  paneRef={paneRef}
+  loading={loading}
+  filtered={filtered}
+  lang={lang}
+  justAddedId={justAddedId}
+  qtyDraft={qtyDraft}
+  seoLine={seoLine}
+  money={money}
+  parseNum={parseNum}
+  normalizeQty={normalizeQty}
+  normalizeConfigLite={normalizeConfigLite}
+  pickUnitPriceLite={pickUnitPriceLite}
+  pctOff={pctOff}
+  fmtQty={fmtQty}
+  prettyTitleFromSlug={prettyTitleFromSlug}
+  getProductPrice={getProductPrice}
+  getProductImageUrl={getProductImageUrl}
+  BulkHint={BulkHint}
+  ProductAdd={ProductAddBound}
+/>
         </section>
 
         {/* STICKY CART BAR */}
-        {cartTotals.count > 0 && (
-          <div className="fixed left-0 right-0 z-50" style={{ bottom: "calc(88px + env(safe-area-inset-bottom))" }}>
-            <div className="mx-auto max-w-md px-3">
-              <Link
-                href="/cart"
-                className="flex items-center justify-between bg-[#0B6EA9] text-white rounded-2xl px-4 py-3 shadow-lg"
-              >
-                <div>
-                  <div className="text-xs opacity-90">
-                    {cartTotals.count} {lang === "en" ? "item" : "shay"}
-                    {cartTotals.count > 1 ? "s" : ""} {lang === "en" ? "in cart" : "gaadhiga ku jira"}
-                  </div>
-                  <div className="text-lg font-extrabold">{money(cartTotals.total)}</div>
-                </div>
-
-                <div className="text-right leading-tight font-extrabold">
-                  <div>{lang === "en" ? "Go to Cart →" : "U gudub Gaadhiga →"}</div>
-                  <div className="text-[10px] opacity-80">{lang === "en" ? "U gudub Gaadhiga" : "Go to Cart"}</div>
-                </div>
-              </Link>
-            </div>
-          </div>
-        )}
+<StickyCartBar count={cartTotals.count} total={cartTotals.total} lang={lang} />
       </main>
     </>
   );
