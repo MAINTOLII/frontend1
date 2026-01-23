@@ -29,8 +29,8 @@ export default function ProductGrid({
   const { items: cartItems, addItem, setQty } = useCart();
 
   return (
-    <div ref={paneRef} className="min-h-0 overflow-y-auto p-1 pb-36 bg-white">
-      <div className="grid grid-cols-2 gap-3">
+    <div ref={paneRef} className="min-h-0 overflow-y-auto p-0.5 pb-28 bg-white">
+      <div className="grid grid-cols-2 gap-2">
         {loading ? (
           <div className="col-span-2 bg-white rounded-2xl border p-4 text-sm text-gray-600">Loading...</div>
         ) : (
@@ -86,7 +86,7 @@ export default function ProductGrid({
 
               return (
                 <div key={pid} className="rounded-2xl overflow-visible">
-                  <div className="px-1 pt-2">
+                  <div className="px-1 pt-1">
                     <div className="relative rounded-2xl overflow-hidden border border-gray-200 bg-white">
                       {justAddedId === pid ? (
                         <div className="absolute left-2 top-2 text-[10px] px-2 py-1 rounded-full bg-[#0B6EA9] text-white font-extrabold shadow">
@@ -95,11 +95,11 @@ export default function ProductGrid({
                       ) : null}
 
                       <Link href={`/product/${encodeURIComponent(rawSlug)}`} className="block">
-                        <div className="relative w-full h-56">
+                        <div className="relative w-full h-48">
                           {imgUrl ? (
-                            <Image src={imgUrl} alt={name || "Product"} fill className="object-contain scale-110" />
+                            <Image src={imgUrl} alt={name || "Product"} fill className="object-contain p-2" />
                           ) : (
-                            <div className="w-full h-56 grid place-items-center text-[11px] text-gray-400">
+                            <div className="w-full h-48 grid place-items-center text-[11px] text-gray-400">
                               {lang === "en" ? "No image" : "Sawir ma jiro"}
                             </div>
                           )}
@@ -168,12 +168,12 @@ export default function ProductGrid({
                     </div>
                   </div>
 
-                  <div className="px-2 pt-0.5 pb-2">
-                    <div className="text-[13px] font-semibold tracking-tight text-gray-900 line-clamp-2 min-h-[28px]">
+                  <div className="px-2 pt-0.5 pb-1.5">
+                    <div className="text-[13px] font-medium tracking-wide text-gray-800 line-clamp-2 min-h-[26px]">
                       {name || "—"}
                     </div>
 
-                    <div className="mt-0 flex items-end justify-between gap-1">
+                    <div className="mt-0.5 flex items-end justify-between gap-1">
                       <div>
                         <div className="flex items-baseline gap-2">
                           <div className="text-[18px] font-extrabold tracking-tight text-gray-900 leading-none">
@@ -197,7 +197,7 @@ export default function ProductGrid({
                     </div>
 
                     {Number(p?.qty ?? 0) <= 0 && (
-                      <div className="mt-2 pt-2 border-t border-gray-100 text-[11px] font-extrabold text-red-600">
+                      <div className="mt-1.5 pt-1.5 border-t border-gray-100 text-[11px] font-extrabold text-red-600">
                         {lang === "en" ? "Out of stock" : "Waa ka dhammaatay"}
                       </div>
                     )}
