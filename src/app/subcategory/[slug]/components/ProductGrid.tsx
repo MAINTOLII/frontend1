@@ -29,8 +29,8 @@ export default function ProductGrid({
   const { items: cartItems, addItem, setQty } = useCart();
 
   return (
-    <div ref={paneRef} className="min-h-0 overflow-y-auto p-0.5 pb-28 bg-white">
-      <div className="grid grid-cols-2 gap-2">
+    <div ref={paneRef} className="min-h-0 overflow-y-auto p-0 pb-24 bg-white">
+      <div className="grid grid-cols-2 gap-1.5">
         {loading ? (
           <div className="col-span-2 bg-white rounded-2xl border p-4 text-sm text-gray-600">Loading...</div>
         ) : (
@@ -95,11 +95,11 @@ export default function ProductGrid({
                       ) : null}
 
                       <Link href={`/product/${encodeURIComponent(rawSlug)}`} className="block">
-                        <div className="relative w-full h-48">
+                        <div className="relative w-full h-40">
                           {imgUrl ? (
                             <Image src={imgUrl} alt={name || "Product"} fill className="object-contain p-2" />
                           ) : (
-                            <div className="w-full h-48 grid place-items-center text-[11px] text-gray-400">
+                            <div className="w-full h-40 grid place-items-center text-[11px] text-gray-400">
                               {lang === "en" ? "No image" : "Sawir ma jiro"}
                             </div>
                           )}
@@ -168,12 +168,12 @@ export default function ProductGrid({
                     </div>
                   </div>
 
-                  <div className="px-2 pt-0.5 pb-1.5">
+                  <div className="px-2 pt-0.5 pb-1">
                     <div className="text-[13px] font-medium tracking-wide text-gray-800 line-clamp-2 min-h-[26px]">
                       {name || "—"}
                     </div>
 
-                    <div className="mt-0.5 flex items-end justify-between gap-1">
+                    <div className="mt-0.5 flex items-end justify-between gap-0.5">
                       <div>
                         <div className="flex items-baseline gap-2">
                           <div className="text-[18px] font-extrabold tracking-tight text-gray-900 leading-none">

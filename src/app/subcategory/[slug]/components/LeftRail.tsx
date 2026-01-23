@@ -19,7 +19,7 @@ function getLabel(obj: any, lang: "so" | "en") {
 function AllIcon({ active }: { active: boolean }) {
   return (
     <div
-      className={`relative h-12 w-12 rounded-full grid place-items-center border transition-all ${
+      className={`relative h-10 w-10 rounded-full grid place-items-center border transition-all ${
         active ? "bg-[#0B6EA9] border-[#0B6EA9]" : "bg-white border-gray-200"
       }`}
     >
@@ -114,13 +114,13 @@ export default function LeftRail({
         }`}
       >
         <AllIcon active={activeSS === null} />
-        <div className={`mt-1 text-[12px] font-extrabold tracking-tight ${activeSS === null ? "text-[#0B6EA9]" : "text-gray-900"}`}>
+        <div className={`mt-1 text-[11px] font-bold tracking-tight ${activeSS === null ? "text-[#0B6EA9]" : "text-gray-900"}`}>
           {lang === "en" ? "All" : "Dhammaan"}
         </div>
       </button>
 
       {/* LIST */}
-      <div ref={railRef} onScroll={updateRailEdges} className="mt-2 flex-1 min-h-0 overflow-y-auto space-y-2 pr-1 pb-12 pt-12">
+      <div ref={railRef} onScroll={updateRailEdges} className="mt-1.5 flex-1 min-h-0 overflow-y-auto space-y-1.5 pr-1 pb-10 pt-10">
         {ssList.map((ss: any) => {
           const isActive = activeSS === ss.slug;
           const primary = getLabel(ss, lang);
@@ -136,12 +136,12 @@ export default function LeftRail({
                   paneRef.current?.scrollTo({ top: 0, behavior: "smooth" });
                 } catch {}
               }}
-              className={`w-full flex flex-col items-center justify-center px-2 py-3 rounded-2xl transition ${
+              className={`w-full flex flex-col items-center justify-center px-2 py-2 rounded-2xl transition ${
                 isActive ? "bg-[#E6F4FF]" : "bg-white"
               }`}
             >
               {/* NO BG / NO BORDER */}
-              <div className="w-full h-16 overflow-hidden relative">
+              <div className="w-full h-14 overflow-hidden relative">
                 {img ? (
                   <Image src={img} alt={primary} fill className="object-contain" />
                 ) : (
@@ -152,8 +152,8 @@ export default function LeftRail({
               </div>
 
               {/* ONE language only */}
-              <div className="mt-2 text-center leading-tight">
-                <div className={`text-[12px] font-extrabold tracking-tight ${isActive ? "text-[#0B6EA9]" : "text-gray-900"}`}>
+              <div className="mt-1.5 text-center leading-tight">
+                <div className={`text-[11px] font-bold tracking-tight ${isActive ? "text-[#0B6EA9]" : "text-gray-900"}`}>
                   {primary}
                 </div>
               </div>
