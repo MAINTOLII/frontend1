@@ -574,7 +574,7 @@ export default function SubcategoryPage() {
 
         {/* MAIN */}
         <section
-          className={`mx-auto max-w-md grid ${hasRail ? "grid-cols-[150px_1fr]" : "grid-cols-1"}`}
+          className={`mx-auto max-w-md grid ${hasRail ? "grid-cols-[130px_1fr]" : "grid-cols-1"}`}
           style={{ height: "calc(100vh - 128px)" }}
         >
           {/* LEFT RAIL */}

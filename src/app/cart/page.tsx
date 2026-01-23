@@ -249,8 +249,7 @@ export default function CartPage() {
   }, [cartItems, productMap]);
 
   const subtotal = useMemo(() => rows.reduce((s, r) => s + (r?.lineTotal ?? 0), 0), [rows]);
-  const vatFee = useMemo(() => (subtotal > 0 ? subtotal * 0.05 : 0), [subtotal]);
-  const total = subtotal + vatFee;
+  const total = subtotal;
 
   const canCheckout = rows.length > 0;
 
@@ -374,10 +373,6 @@ export default function CartPage() {
               <div className="flex justify-between text-sm">
                 <span className="text-gray-700">Subtotal</span>
                 <span className="font-semibold">{money(subtotal)}</span>
-              </div>
-              <div className="flex justify-between text-sm mt-2">
-                <span className="text-gray-700">VAT (5%)</span>
-                <span className="font-semibold">{money(vatFee)}</span>
               </div>
               <div className="border-t mt-3 pt-3 flex justify-between">
                 <span className="font-extrabold">Total</span>
