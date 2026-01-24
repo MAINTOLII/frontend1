@@ -256,6 +256,12 @@ export default function ProductPageClient() {
     return Number.isFinite(p) ? Math.max(0, p) : 0;
   }, [baseTotal, lineTotal]);
 
+  const discountAmt = useMemo(() => {
+    if (!product) return 0;
+    const d = baseTotal - lineTotal;
+    return Number.isFinite(d) ? Math.max(0, d) : 0;
+  }, [product, baseTotal, lineTotal]);
+
   const bestBulk = useMemo(() => {
     const bulk = (cfg.options || []).filter((o) => o.type === "bulk") as any[];
     if (!bulk.length) return null;
@@ -271,6 +277,21 @@ export default function ProductPageClient() {
       label: String(b.label ?? "").trim(),
     };
   }, [cfg.options]);
+
+  const bulkUnlocked = useMemo(() => {
+    if (!bestBulk) return false;
+    const minq = Number(bestBulk.min_qty ?? 0);
+    if (!Number.isFinite(minq) || minq <= 0) return false;
+    return draftQty >= minq;
+  }, [bestBulk, draftQty]);
+
+  const bulkMoreNeeded = useMemo(() => {
+    if (!bestBulk) return 0;
+    const minq = Number(bestBulk.min_qty ?? 0);
+    if (!Number.isFinite(minq) || minq <= 0) return 0;
+    const need = minq - draftQty;
+    return need > 0 ? need : 0;
+  }, [bestBulk, draftQty]);
 
   const heroUrl = useMemo(() => {
     const chosen = images?.[activeImgIdx]?.path;
@@ -339,7 +360,9 @@ export default function ProductPageClient() {
   if (loading) {
     return (
       <main className="min-h-screen bg-[#F4F6F8] pb-[240px]">
-        <div className="mx-auto max-w-md px-4 py-5 text-sm text-gray-700">{isEn ? "Loading…" : "Wuu soo shubanayaa…"}</div>
+        <div className="mx-auto max-w-md px-4 py-5 text-sm text-gray-700">
+          {isEn ? "Loading…" : "Wuu soo shubanayaa…"}
+        </div>
       </main>
     );
   }
@@ -442,7 +465,8 @@ export default function ProductPageClient() {
         <div className="bg-white">
           <div className="px-4 pt-2">
             <div className="relative bg-gray-50 rounded-2xl border overflow-hidden">
-              <div className="relative h-[250px] w-full">
+              {/* BIG HERO */}
+              <div className="relative h-[280px] w-full">
                 <Image
                   src={heroUrl}
                   alt={String(title || (isEn ? "Product image" : "Sawirka alaabta"))}
@@ -450,6 +474,14 @@ export default function ProductPageClient() {
                   className="object-contain p-4"
                   priority
                 />
+
+                {/* DEAL CORNER TAG */}
+                {showDiscount ? (
+                  <div className="absolute left-3 top-3 rounded-2xl bg-[#0B6EA9] text-white px-3 py-2 shadow">
+                    <div className="text-[10px] font-bold opacity-90">{isEn ? "DEAL" : "QIIMO DHIMIS"}</div>
+                    <div className="text-[12px] font-extrabold leading-none">-{discountPct}%</div>
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -477,33 +509,77 @@ export default function ProductPageClient() {
             ) : null}
           </div>
 
-          {/* PRICE */}
-          <div className="px-4 pt-3 pb-1">
-            <div className="flex items-center gap-2">
-              <div className="text-3xl font-extrabold text-gray-900">{money(lineTotal)}</div>
+          {/* ✅ UPGRADED PRICE / SAVINGS UX */}
+          <div className="px-4 pt-3 pb-2">
+            <div className="flex items-end justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-end gap-2 flex-wrap">
+                  <div className="text-4xl font-extrabold text-gray-900 leading-none">{money(lineTotal)}</div>
 
-              {showDiscount && (
-                <div className="h-7 px-2 rounded-full bg-[#E6F4FF] text-[#0B6EA9] text-[12px] font-extrabold grid place-items-center">
-                  -{discountPct}%
+                  {showDiscount ? (
+                    <div className="flex items-center gap-2">
+                      <div className="px-2.5 py-1 rounded-full bg-[#E6F4FF] text-[#0B6EA9] text-[12px] font-extrabold">
+                        {isEn ? "DISCOUNT" : "QIIMO DHIMIS"} -{discountPct}%
+                      </div>
+                      <div className="text-[13px] text-gray-400 font-extrabold line-through">{money(baseTotal)}</div>
+                    </div>
+                  ) : null}
                 </div>
-              )}
 
-              {showDiscount && <div className="text-[12px] text-gray-400 font-bold line-through">{money(baseTotal)}</div>}
-            </div>
-
-            <div className="mt-1 text-[12px] text-gray-600 font-semibold">
-              {money(unitPrice)} / {cfg.unit} • {fmtQty(draftQty, cfg.unit, cfg.is_weight)}
-            </div>
-
-            {bestBulk && (
-              <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                <div className="text-[12px] font-extrabold text-gray-900">{isEn ? "Bulk price" : "Qiimo jumlo"}</div>
-                <div className="text-[12px] text-gray-700 font-semibold">
-                  {money(bestBulk.unit_price)} / {cfg.unit} {isEn ? "from" : "laga bilaabo"} {bestBulk.min_qty}+ {cfg.unit}
-                  {bestBulk.max_qty != null ? (isEn ? ` (max ${bestBulk.max_qty} ${cfg.unit})` : ` (ugu badnaan ${bestBulk.max_qty} ${cfg.unit})`) : ""}
+                <div className="mt-1 text-[13px] text-gray-600 font-semibold">
+                  {money(unitPrice)} / {cfg.unit} • {fmtQty(draftQty, cfg.unit, cfg.is_weight)}
                 </div>
               </div>
-            )}
+
+              {showDiscount && discountAmt > 0.005 ? (
+                <div className="shrink-0 px-3 py-2 rounded-2xl bg-[#0B6EA9] text-white shadow">
+                  <div className="text-[11px] font-bold opacity-90">{isEn ? "You save" : "Waad badbaadisay"}</div>
+                  <div className="text-[15px] font-extrabold leading-none">{money(discountAmt)}</div>
+                </div>
+              ) : null}
+            </div>
+
+            {/* Bulk banner that FEELS like reward */}
+            {bestBulk ? (
+              <div className="mt-3 rounded-2xl border border-gray-200 bg-white px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[12px] font-extrabold text-gray-900">{isEn ? "Bulk deal" : "Jumlo"}</div>
+                    <div className="mt-0.5 text-[12px] text-gray-700 font-semibold">
+                      {money(bestBulk.unit_price)} / {cfg.unit} {isEn ? "from" : "laga bilaabo"} {bestBulk.min_qty}+{" "}
+                      {cfg.unit}
+                      {bestBulk.max_qty != null
+                        ? isEn
+                          ? ` (max ${bestBulk.max_qty} ${cfg.unit})`
+                          : ` (ugu badnaan ${bestBulk.max_qty} ${cfg.unit})`
+                        : ""}
+                    </div>
+                  </div>
+
+                  {bulkUnlocked ? (
+                    <div className="shrink-0 px-3 py-2 rounded-2xl bg-[#E6F4FF] text-[#0B6EA9] font-extrabold text-[12px]">
+                      {isEn ? "Bulk applied ✓" : "Jumlo waa shaqaynaysaa ✓"}
+                    </div>
+                  ) : (
+                    <div className="shrink-0 px-3 py-2 rounded-2xl bg-gray-50 text-gray-800 font-extrabold text-[12px]">
+                      {isEn ? `Add ${bulkMoreNeeded} more` : `Ku dar ${bulkMoreNeeded} kale`}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Extra “deal message” line to make it FEEL real */}
+            {showDiscount ? (
+              <div className="mt-3 rounded-2xl bg-[#F1F8FF] border border-[#D6ECFF] px-3 py-2">
+                <div className="text-[12px] font-extrabold text-[#0B6EA9]">
+                  {isEn ? `Nice! You’re saving ${money(discountAmt)} on this order.` : `Wacan! Waxaad badbaadisay ${money(discountAmt)}.`}
+                </div>
+                <div className="text-[11px] text-gray-600 font-semibold">
+                  {isEn ? "Increase qty to unlock even better bulk prices." : "Kordhi tirada si aad u hesho qiimo jumlo fiican."}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {exactOptions.length > 0 || bulkOptions.length > 0 ? (

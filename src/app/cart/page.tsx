@@ -230,6 +230,9 @@ export default function CartPage() {
         const rawSlug = String(product.slug ?? "").trim();
         const title = prettyTitleFromSlug(rawSlug) || "Product";
 
+        const baseTotal = basePrice * qty;
+        const discountAmount = Math.max(0, baseTotal - lineTotal);
+
         return {
           key: `${ci.productId}-${ci.variantId ?? "no-variant"}`,
           ci,
@@ -241,6 +244,8 @@ export default function CartPage() {
           basePrice,
           qty,
           lineTotal,
+          baseTotal,
+          discountAmount,
         };
       })
       .filter(Boolean) as any[];
@@ -249,6 +254,8 @@ export default function CartPage() {
   }, [cartItems, productMap]);
 
   const subtotal = useMemo(() => rows.reduce((s, r) => s + (r?.lineTotal ?? 0), 0), [rows]);
+  const originalSubtotal = useMemo(() => rows.reduce((s, r) => s + (r?.baseTotal ?? 0), 0), [rows]);
+  const discountTotal = useMemo(() => rows.reduce((s, r) => s + (r?.discountAmount ?? 0), 0), [rows]);
   const total = subtotal;
 
   const canCheckout = rows.length > 0;
@@ -374,6 +381,20 @@ export default function CartPage() {
                 <span className="text-gray-700">Subtotal</span>
                 <span className="font-semibold">{money(subtotal)}</span>
               </div>
+
+              {discountTotal > 0.0001 ? (
+                <>
+                  <div className="mt-1 flex justify-between text-xs">
+                    <span className="text-gray-500">Original</span>
+                    <span className="text-gray-400 line-through font-semibold">{money(originalSubtotal)}</span>
+                  </div>
+                  <div className="mt-1 flex justify-between text-xs">
+                    <span className="text-gray-700">Discount</span>
+                    <span className="text-red-600 font-extrabold">- {money(discountTotal)}</span>
+                  </div>
+                </>
+              ) : null}
+
               <div className="border-t mt-3 pt-3 flex justify-between">
                 <span className="font-extrabold">Total</span>
                 <span className="font-extrabold">{money(total)}</span>
