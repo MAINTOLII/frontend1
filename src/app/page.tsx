@@ -1,10 +1,9 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
-
 import Image from "next/image";
 import Link from "next/link";
 import TopNavbar from "@/components/TopNavbar";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import Hero from "@/components/Hero";
 import TopCategoriesStrip from "@/components/TopCategoriesStrip";
@@ -117,6 +116,8 @@ type ProductPriceRow = {
 
 type CategoryWithSubcats = CategoryRow & { subcats: SubcategoryRow[] };
 
+// Landing popup image (change this to whatever you want)
+const LANDING_IMAGE_URL = "https://swrgqktuatubssvwjkyx.supabase.co/storage/v1/object/public/product-images/4pf.jpg";
 const HERO_SLIDES = [
   {
     id: 1,
@@ -226,6 +227,29 @@ async function getProductsByIds(ids: string[]): Promise<ProductPriceRow[]> {
 
 export default function HomePage() {
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+// Landing popup (persist until dismissed) — avoid hydration mismatch by deciding after mount
+const [showLanding, setShowLanding] = useState(false);
+const [landingReady, setLandingReady] = useState(false);
+
+useEffect(() => {
+  try {
+    const v = localStorage.getItem("matomart_landing_dismissed");
+    setShowLanding(v !== "1");
+  } catch {
+    setShowLanding(true);
+  } finally {
+    setLandingReady(true);
+  }
+}, []);
+
+const dismissLanding = useCallback(() => {
+  setShowLanding(false);
+  try {
+    localStorage.setItem("matomart_landing_dismissed", "1");
+  } catch {}
+}, []);
+
+
   const [activeSlide, setActiveSlide] = useState(0);
 
   const { items } = useCart();
@@ -423,6 +447,62 @@ const headerOffset = compactTopCats ? 180 : 200;
   return (
     <main className="min-h-screen bg-white text-black">
       <TopNavbar />
+{landingReady && showLanding ? (
+  <div className="fixed inset-0 z-[999]">
+          {/* Dark overlay */}
+          <button
+            type="button"
+            aria-label="Close landing"
+            onClick={dismissLanding}
+            className="absolute inset-0 bg-black/70"
+          />
+
+          {/* Popup card */}
+          <div className="absolute inset-0 flex items-center justify-center px-4 py-6">
+            <div className="relative w-full max-w-md">
+              <div className="relative overflow-hidden rounded-3xl bg-white shadow-2xl">
+                {/* Image takes most of the popup */}
+                <div className="relative h-[72vh] min-h-[420px] max-h-[760px] w-full">
+                  <Image
+                    src={LANDING_IMAGE_URL}
+                    alt="Mato landing"
+                    fill
+                    priority
+                    className="object-cover"
+                  />
+
+                  {/* Close */}
+                  <button
+                    type="button"
+                    onClick={dismissLanding}
+                    aria-label="Close"
+                    className="absolute right-3 top-3 h-11 w-11 rounded-full bg-black/60 text-white grid place-items-center backdrop-blur-sm active:scale-[0.98]"
+                  >
+                    ✕
+                  </button>
+
+                  {/* Optional bottom gradient + text */}
+                  {/* <div className="absolute inset-x-0 bottom-0 p-4">
+                    <div className="rounded-2xl bg-white/90 backdrop-blur-md px-4 py-3">
+                      <div className="text-[15px] font-extrabold text-gray-900">
+                        {lang === "en" ? "Shop essentials fast" : "Raashin si fudud u dalbo"}
+                      </div>
+                      <div className="mt-0.5 text-[12px] font-semibold text-gray-700">
+                        {lang === "en" ? "Tap a category to start." : "Dooro qaybta aad rabto."}
+                      </div>
+                    </div>
+                  </div> */}
+                </div>
+              </div>
+
+              {/* Small helper text under popup (optional) */}
+              <div className="mt-3 text-center text-[11px] font-semibold text-white/80">
+                {lang === "en" ? "Tap anywhere outside to close" : "Meel ka baxsan ku taabo si aad u xirto"}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
 {/* TOP CATEGORIES STRIP (moved to component) */}
 <div className="-mt-2">
